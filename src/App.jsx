@@ -1,62 +1,57 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useMemo } from 'react';
-import AuthPage from './pages/AuthPage';
+import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import Analytics from './pages/Analytics';
 import StudentSearch from './pages/StudentSearch';
 import Groups from './pages/Groups';
-import GuestCodes from './pages/GuestCodes';
-import GuestView from './pages/GuestView';
+import StudentsRegister from './pages/StudentsRegister';
+import ReminderSettings from './pages/ReminderSettings';
 import Layout from './components/Layout';
 import { useAppData } from './context/AppDataContext';
 
-const protectedRoutes = [
-  { path: '/dashboard', element: <Dashboard /> },
-  { path: '/payments', element: <Payments /> },
-  { path: '/expenses', element: <Expenses /> },
-  { path: '/analytics', element: <Analytics /> },
-  { path: '/students', element: <StudentSearch /> },
-  { path: '/groups', element: <Groups /> },
-  { path: '/guest-codes', element: <GuestCodes /> }
-];
+function RequireAuth() {
+  const { session, loading } = useAppData();
+  const isAuthenticated = useMemo(() => Boolean(session?.user), [session?.user]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-brand-blue text-brand-light">
+        <span className="animate-pulse text-lg">جارٍ تحميل البيانات...</span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return <Outlet />;
+}
 
 export default function App() {
-  const location = useLocation();
   const { session } = useAppData();
-
-  const isGuestRoute = useMemo(
-    () => location.pathname.startsWith('/guest'),
-    [location.pathname]
-  );
-
-  if (isGuestRoute) {
-    return (
-      <Routes>
-        <Route path="/guest/:code" element={<GuestView />} />
-        <Route path="*" element={<Navigate to="/guest/demo" replace />} />
-      </Routes>
-    );
-  }
-
-  if (!session) {
-    return (
-      <Routes>
-        <Route path="/auth" element={<AuthPage />} />
-        <Route path="*" element={<Navigate to="/auth" replace />} />
-      </Routes>
-    );
-  }
+  const isAuthenticated = Boolean(session?.user);
 
   return (
-    <Layout>
-      <Routes>
-        {protectedRoutes.map(({ path, element }) => (
-          <Route key={path} path={path} element={element} />
-        ))}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </Layout>
+    <Routes>
+      <Route path="/auth" element={<Auth />} />
+      <Route path="/" element={<Navigate to="/auth" replace />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<Layout />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/payments" element={<Payments />} />
+          <Route path="/expenses" element={<Expenses />} />
+          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/students" element={<StudentSearch />} />
+          <Route path="/students/register" element={<StudentsRegister />} />
+          <Route path="/groups" element={<Groups />} />
+          <Route path="/settings/reminders" element={<ReminderSettings />} />
+          <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/auth'} replace />} />
+        </Route>
+      </Route>
+    </Routes>
   );
 }

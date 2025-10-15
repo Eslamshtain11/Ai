@@ -1,6 +1,9 @@
-export default function DataTable({ columns, data, footer }) {
+export default function DataTable({ columns, data, footer, containerRef }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-brand-secondary/20 bg-brand-navy/80 shadow-soft">
+    <div
+      ref={containerRef}
+      className="overflow-hidden rounded-2xl border border-brand-secondary/20 bg-brand-navy/80 shadow-soft"
+    >
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-brand-secondary/20 text-right">
           <thead className="bg-brand-blue/40 text-brand-secondary">

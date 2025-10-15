@@ -1,86 +1,77 @@
 import { useMemo, useRef, useState } from 'react';
 import { Calendar, FileDown, FileSpreadsheet, LineChart, PlusCircle, Search } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { ar } from 'date-fns/locale';
-import { utils, writeFile } from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import SectionHeader from '../components/SectionHeader';
 import ActionButton from '../components/ActionButton';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import FormField from '../components/FormField';
+import SmartDatePicker from '../components/SmartDatePicker';
 import { useAppData } from '../context/AppDataContext';
+import { exportPaymentsPDF, exportPaymentsXLSX, mapPaymentRowsForExport } from '../export/exportPayments';
+import { formatCurrencyEGP } from '../utils/formatters';
 
 const initialPayment = {
-  studentId: '',
+  student_id: '',
   amount: '',
-  date: ''
+  date: '',
+  note: ''
 };
 
 export default function Payments() {
   const { payments, students, groups, addPayment, updatePayment, deletePayment } = useAppData();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
   const [form, setForm] = useState(initialPayment);
   const searchInputRef = useRef(null);
+  const tableContainerRef = useRef(null);
+
+  const studentsLookup = useMemo(
+    () => Object.fromEntries(students.map((student) => [student.id, student])),
+    [students]
+  );
+
+  const groupsLookup = useMemo(
+    () => Object.fromEntries(groups.map((group) => [group.id, group])),
+    [groups]
+  );
+
+  const monthKey = selectedMonth ? format(selectedMonth, 'yyyy-MM') : '';
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
-      const student = students.find((item) => item.id === payment.studentId);
+      const student = studentsLookup[payment.student_id];
       const matchesSearch = (student?.name ?? '').toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesMonth = selectedMonth
-        ? format(parseISO(payment.date), 'yyyy-MM') === selectedMonth
-        : true;
+      const matchesMonth = monthKey ? format(parseISO(payment.date), 'yyyy-MM') === monthKey : true;
       return matchesSearch && matchesMonth;
     });
-  }, [payments, searchTerm, selectedMonth, students]);
+  }, [payments, studentsLookup, searchTerm, monthKey]);
 
   const total = useMemo(
-    () => filteredPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
+    () => filteredPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0),
     [filteredPayments]
   );
 
   const handleExportXlsx = () => {
-    const rows = filteredPayments.map((payment) => {
-      const student = students.find((item) => item.id === payment.studentId);
-      const group = groups.find((item) => item.id === student?.groupId);
-      return {
-        الطالب: student?.name,
-        المجموعة: group?.name,
-        المبلغ: payment.amount,
-        التاريخ: payment.date
-      };
-    });
-    const worksheet = utils.json_to_sheet(rows);
-    const workbook = utils.book_new();
-    utils.book_append_sheet(workbook, worksheet, 'Payments');
-    writeFile(workbook, 'payments.xlsx');
+    const rows = mapPaymentRowsForExport(filteredPayments, studentsLookup, groupsLookup);
+    exportPaymentsXLSX(rows, monthKey);
   };
 
-  const handleExportPdf = () => {
-    const doc = new jsPDF({ orientation: 'landscape' });
-    const tableData = filteredPayments.map((payment) => {
-      const student = students.find((item) => item.id === payment.studentId);
-      const group = groups.find((item) => item.id === student?.groupId);
-      return [student?.name, group?.name, payment.amount, payment.date];
-    });
-    autoTable(doc, {
-      head: [['الطالب', 'المجموعة', 'المبلغ', 'التاريخ']],
-      body: tableData
-    });
-    doc.save('payments.pdf');
+  const handleExportPdf = async () => {
+    if (filteredPayments.length === 0) return;
+    await exportPaymentsPDF(tableContainerRef.current, monthKey);
   };
 
   const openModal = (payment) => {
     if (payment) {
       setEditingPayment(payment);
       setForm({
-        studentId: payment.studentId,
+        student_id: payment.student_id,
         amount: payment.amount,
-        date: payment.date
+        date: payment.date,
+        note: payment.note ?? ''
       });
     } else {
       setEditingPayment(null);
@@ -89,13 +80,13 @@ export default function Payments() {
     setModalOpen(true);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!form.studentId || !form.amount || !form.date) return;
+    if (!form.student_id || !form.amount || !form.date) return;
     if (editingPayment) {
-      updatePayment(editingPayment.id, form);
+      await updatePayment(editingPayment.id, form);
     } else {
-      addPayment({ ...form });
+      await addPayment(form);
     }
     setModalOpen(false);
   };
@@ -104,23 +95,30 @@ export default function Payments() {
     {
       header: 'الطالب',
       accessor: 'student',
-      cell: (row) => students.find((student) => student.id === row.studentId)?.name
+      cell: (row) => studentsLookup[row.student_id]?.name ?? 'غير معروف'
     },
     {
       header: 'المجموعة',
       accessor: 'group',
       cell: (row) => {
-        const student = students.find((student) => student.id === row.studentId);
-        return groups.find((group) => group.id === student?.groupId)?.name;
+        const student = studentsLookup[row.student_id];
+        return student ? groupsLookup[student.group_id]?.name ?? 'غير مصنف' : 'غير مصنف';
       }
     },
     {
       header: 'المبلغ',
-      accessor: 'amount'
+      accessor: 'amount',
+      cell: (row) => formatCurrencyEGP(row.amount)
     },
     {
       header: 'التاريخ',
-      accessor: 'date'
+      accessor: 'date',
+      cell: (row) => (row.date ? format(parseISO(row.date), 'dd/MM/yyyy') : '-')
+    },
+    {
+      header: 'ملاحظات',
+      accessor: 'note',
+      cell: (row) => row.note || '-'
     },
     {
       header: 'الإجراءات',
@@ -144,18 +142,13 @@ export default function Payments() {
         title="كشف الحساب"
         subtitle="إدارة كل مدفوعات الطلاب ومتابعتها"
         actions={
-          <>
-            <ActionButton icon={PlusCircle} onClick={() => openModal(null)}>
-              إضافة دفعة جديدة
-            </ActionButton>
-            <ActionButton variant="outline" icon={Search} onClick={() => searchInputRef.current?.focus()}>
-              بحث
-            </ActionButton>
-          </>
+          <ActionButton icon={PlusCircle} onClick={() => openModal(null)}>
+            إضافة دفعة جديدة
+          </ActionButton>
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="relative">
           <Search className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-secondary" />
           <input
@@ -169,18 +162,15 @@ export default function Payments() {
         </div>
         <label className="flex items-center gap-3 rounded-2xl border border-brand-secondary/30 bg-brand-blue/60 px-5 py-3">
           <Calendar className="h-5 w-5 text-brand-gold" />
-          <select
-            className="w-full bg-transparent text-sm"
-            value={selectedMonth}
-            onChange={(event) => setSelectedMonth(event.target.value)}
-          >
-            <option value="">كل الأشهر</option>
-            {Array.from(new Set(payments.map((payment) => format(parseISO(payment.date), 'yyyy-MM')))).map((month) => (
-              <option key={month} value={month}>
-                {format(parseISO(`${month}-01`), 'MMMM yyyy', { locale: ar })}
-              </option>
-            ))}
-          </select>
+          <SmartDatePicker
+            selected={selectedMonth}
+            onChange={(value) => setSelectedMonth(value)}
+            placeholderText="اختر الشهر"
+            dateFormat="MMMM yyyy"
+            showMonthYearPicker
+            isClearable
+            className="bg-transparent"
+          />
         </label>
         <div className="flex flex-wrap justify-end gap-3">
           <ActionButton variant="success" icon={FileSpreadsheet} onClick={handleExportXlsx}>
@@ -198,12 +188,13 @@ export default function Payments() {
       <DataTable
         columns={tableColumns}
         data={filteredPayments}
+        containerRef={tableContainerRef}
         footer={
           <tr>
-            <td className="px-6 py-4 font-bold" colSpan={3}>
-              الإجمالي
+            <td className="px-6 py-4 font-bold" colSpan={4}>
+              إجمالي الدفعات
             </td>
-            <td className="px-6 py-4 text-brand-gold">{total.toLocaleString()} ر.س</td>
+            <td className="px-6 py-4 text-brand-gold">{formatCurrencyEGP(total)}</td>
             <td />
           </tr>
         }
@@ -213,9 +204,10 @@ export default function Payments() {
         <form className="space-y-4" onSubmit={handleSubmit}>
           <FormField label="الطالب">
             <select
-              value={form.studentId}
-              onChange={(event) => setForm((prev) => ({ ...prev, studentId: event.target.value }))}
+              value={form.student_id}
+              onChange={(event) => setForm((prev) => ({ ...prev, student_id: event.target.value }))}
               className="rounded-xl px-4 py-3"
+              required
             >
               <option value="">اختر الطالب</option>
               {students.map((student) => (
@@ -225,20 +217,31 @@ export default function Payments() {
               ))}
             </select>
           </FormField>
-          <FormField label="المبلغ (ر.س)">
+          <FormField label="المبلغ (ج.م)">
             <input
               type="number"
               value={form.amount}
               onChange={(event) => setForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
               className="rounded-xl px-4 py-3"
+              required
             />
           </FormField>
           <FormField label="التاريخ">
-            <input
-              type="date"
-              value={form.date}
-              onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))}
+            <SmartDatePicker
+              selected={form.date ? parseISO(form.date) : null}
+              onChange={(value) =>
+                setForm((prev) => ({ ...prev, date: value ? format(value, 'yyyy-MM-dd') : '' }))
+              }
+              placeholderText="اختر التاريخ"
+            />
+          </FormField>
+          <FormField label="ملاحظات">
+            <textarea
+              value={form.note}
+              onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
               className="rounded-xl px-4 py-3"
+              rows={3}
+              placeholder="ملاحظات اختيارية"
             />
           </FormField>
           <div className="flex justify-end gap-3 pt-4">

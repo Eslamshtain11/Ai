@@ -1,41 +1,42 @@
 import { useMemo, useState } from 'react';
 import { Calendar, FileDown, FileSpreadsheet, PlusCircle, Search } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { ar } from 'date-fns/locale';
 import SectionHeader from '../components/SectionHeader';
 import ActionButton from '../components/ActionButton';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import FormField from '../components/FormField';
+import SmartDatePicker from '../components/SmartDatePicker';
 import { useAppData } from '../context/AppDataContext';
-import toast from 'react-hot-toast';
+import { formatCurrencyEGP } from '../utils/formatters';
 
 const initialExpense = {
   description: '',
   amount: '',
-  date: ''
+  date: '',
+  note: ''
 };
 
 export default function Expenses() {
   const { expenses, addExpense, updateExpense, deleteExpense } = useAppData();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [form, setForm] = useState(initialExpense);
 
+  const monthKey = selectedMonth ? format(selectedMonth, 'yyyy-MM') : '';
+
   const filteredExpenses = useMemo(() => {
     return expenses.filter((expense) => {
       const matchesSearch = expense.description.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesMonth = selectedMonth
-        ? format(parseISO(expense.date), 'yyyy-MM') === selectedMonth
-        : true;
+      const matchesMonth = monthKey ? format(parseISO(expense.date), 'yyyy-MM') === monthKey : true;
       return matchesSearch && matchesMonth;
     });
-  }, [expenses, searchTerm, selectedMonth]);
+  }, [expenses, searchTerm, monthKey]);
 
   const total = useMemo(
-    () => filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+    () => filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0),
     [filteredExpenses]
   );
 
@@ -45,7 +46,8 @@ export default function Expenses() {
       setForm({
         description: expense.description,
         amount: expense.amount,
-        date: expense.date
+        date: expense.date,
+        note: expense.note ?? ''
       });
     } else {
       setEditingExpense(null);
@@ -54,25 +56,34 @@ export default function Expenses() {
     setModalOpen(true);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!form.description || !form.amount || !form.date) return;
     if (editingExpense) {
-      updateExpense(editingExpense.id, form);
+      await updateExpense(editingExpense.id, form);
     } else {
-      addExpense(form);
+      await addExpense(form);
     }
     setModalOpen(false);
   };
 
-  const handleExport = (formatType) => {
-    toast.success(`تم تجهيز ملف ${formatType} للتنزيل (وضع تجريبي)`);
-  };
-
   const columns = [
     { header: 'الوصف', accessor: 'description' },
-    { header: 'المبلغ', accessor: 'amount' },
-    { header: 'التاريخ', accessor: 'date' },
+    {
+      header: 'المبلغ',
+      accessor: 'amount',
+      cell: (row) => formatCurrencyEGP(row.amount)
+    },
+    {
+      header: 'التاريخ',
+      accessor: 'date',
+      cell: (row) => (row.date ? format(parseISO(row.date), 'dd/MM/yyyy') : '-')
+    },
+    {
+      header: 'ملاحظات',
+      accessor: 'note',
+      cell: (row) => row.note || '-'
+    },
     {
       header: 'الإجراءات',
       accessor: 'actions',
@@ -101,7 +112,7 @@ export default function Expenses() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="relative">
           <Search className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-secondary" />
           <input
@@ -114,24 +125,21 @@ export default function Expenses() {
         </div>
         <label className="flex items-center gap-3 rounded-2xl border border-brand-secondary/30 bg-brand-blue/60 px-5 py-3">
           <Calendar className="h-5 w-5 text-brand-gold" />
-          <select
-            className="w-full bg-transparent text-sm"
-            value={selectedMonth}
-            onChange={(event) => setSelectedMonth(event.target.value)}
-          >
-            <option value="">كل الأشهر</option>
-            {Array.from(new Set(expenses.map((expense) => format(parseISO(expense.date), 'yyyy-MM')))).map((month) => (
-              <option key={month} value={month}>
-                {format(parseISO(`${month}-01`), 'MMMM yyyy', { locale: ar })}
-              </option>
-            ))}
-          </select>
+          <SmartDatePicker
+            selected={selectedMonth}
+            onChange={(value) => setSelectedMonth(value)}
+            placeholderText="اختر الشهر"
+            dateFormat="MMMM yyyy"
+            showMonthYearPicker
+            isClearable
+            className="bg-transparent"
+          />
         </label>
         <div className="flex flex-wrap justify-end gap-3">
-          <ActionButton variant="success" icon={FileSpreadsheet} onClick={() => handleExport('XLSX')}>
+          <ActionButton variant="success" icon={FileSpreadsheet} onClick={() => console.info('XLSX export placeholder')}>
             تصدير XLSX
           </ActionButton>
-          <ActionButton variant="danger" icon={FileDown} onClick={() => handleExport('PDF')}>
+          <ActionButton variant="danger" icon={FileDown} onClick={() => console.info('PDF export placeholder')}>
             تصدير PDF
           </ActionButton>
         </div>
@@ -142,10 +150,10 @@ export default function Expenses() {
         data={filteredExpenses}
         footer={
           <tr>
-            <td className="px-6 py-4 font-bold" colSpan={2}>
+            <td className="px-6 py-4 font-bold" colSpan={3}>
               إجمالي المصروفات
             </td>
-            <td className="px-6 py-4 text-brand-gold">{total.toLocaleString()} ر.س</td>
+            <td className="px-6 py-4 text-brand-gold">{formatCurrencyEGP(total)}</td>
             <td />
           </tr>
         }
@@ -159,22 +167,34 @@ export default function Expenses() {
               value={form.description}
               onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
               className="rounded-xl px-4 py-3"
+              required
             />
           </FormField>
-          <FormField label="المبلغ (ر.س)">
+          <FormField label="المبلغ (ج.م)">
             <input
               type="number"
               value={form.amount}
               onChange={(event) => setForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
               className="rounded-xl px-4 py-3"
+              required
             />
           </FormField>
           <FormField label="التاريخ">
-            <input
-              type="date"
-              value={form.date}
-              onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))}
+            <SmartDatePicker
+              selected={form.date ? parseISO(form.date) : null}
+              onChange={(value) =>
+                setForm((prev) => ({ ...prev, date: value ? format(value, 'yyyy-MM-dd') : '' }))
+              }
+              placeholderText="اختر التاريخ"
+            />
+          </FormField>
+          <FormField label="ملاحظات">
+            <textarea
+              value={form.note}
+              onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
               className="rounded-xl px-4 py-3"
+              rows={3}
+              placeholder="ملاحظات اختيارية"
             />
           </FormField>
           <div className="flex justify-end gap-3 pt-4">

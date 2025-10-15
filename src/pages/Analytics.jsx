@@ -17,6 +17,7 @@ import StatCard from '../components/StatCard';
 import { useAppData } from '../context/AppDataContext';
 import { format, parseISO } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { formatCurrencyEGP } from '../utils/formatters';
 
 export default function Analytics() {
   const { payments, groups, students } = useAppData();
@@ -42,8 +43,8 @@ export default function Analytics() {
   const groupTotals = useMemo(() => {
     const totals = groups.map((group) => ({ id: group.id, name: group.name, total: 0 }));
     payments.forEach((payment) => {
-      const student = students.find((item) => item.id === payment.studentId);
-      const groupIndex = totals.findIndex((item) => item.id === student?.groupId);
+      const student = students.find((item) => item.id === payment.student_id);
+      const groupIndex = totals.findIndex((item) => item.id === student?.group_id);
       if (groupIndex !== -1) {
         totals[groupIndex].total += Number(payment.amount || 0);
       }
@@ -60,13 +61,13 @@ export default function Analytics() {
       <div className="grid gap-6 md:grid-cols-3">
         <StatCard
           title="أعلى شهر دخلًا"
-          value={bestMonth ? `${bestMonth.total.toLocaleString()} ر.س` : 'لا يوجد بيانات'}
+          value={bestMonth ? formatCurrencyEGP(bestMonth.total) : 'لا يوجد بيانات'}
           subtitle={bestMonth?.label}
           accent="green-700"
         />
         <StatCard
           title="أقل شهر دخلًا"
-          value={lowestMonth ? `${lowestMonth.total.toLocaleString()} ر.س` : 'لا يوجد بيانات'}
+          value={lowestMonth ? formatCurrencyEGP(lowestMonth.total) : 'لا يوجد بيانات'}
           subtitle={lowestMonth?.label}
           accent="red-400"
         />
@@ -86,8 +87,15 @@ export default function Analytics() {
                 <BarChart data={monthlyData} barCategoryGap="20%">
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(136,146,176,0.2)" />
                   <XAxis dataKey="label" tick={{ fill: '#CCD6F6', fontSize: 12 }} interval={0} angle={-10} height={70} />
-                  <YAxis tick={{ fill: '#CCD6F6', fontSize: 12 }} orientation="right" />
-                  <Tooltip contentStyle={{ background: '#172A46', borderRadius: 16, border: '1px solid rgba(136,146,176,0.3)' }} />
+                  <YAxis
+                    tick={{ fill: '#CCD6F6', fontSize: 12 }}
+                    orientation="right"
+                    tickFormatter={(value) => formatCurrencyEGP(value).replace('ج.م', '').trim()}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: '#172A46', borderRadius: 16, border: '1px solid rgba(136,146,176,0.3)' }}
+                    formatter={(value) => [formatCurrencyEGP(value), 'المجموع']}
+                  />
                   <Bar dataKey="total" fill="#D4AF37" radius={[10, 10, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -99,7 +107,10 @@ export default function Analytics() {
             <div className="mt-6 h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Tooltip contentStyle={{ background: '#172A46', borderRadius: 16, border: '1px solid rgba(136,146,176,0.3)' }} />
+                  <Tooltip
+                    contentStyle={{ background: '#172A46', borderRadius: 16, border: '1px solid rgba(136,146,176,0.3)' }}
+                    formatter={(value) => [formatCurrencyEGP(value), 'القيمة']}
+                  />
                   <Legend verticalAlign="bottom" wrapperStyle={{ color: '#CCD6F6' }} />
                   <Pie
                     data={pieData}

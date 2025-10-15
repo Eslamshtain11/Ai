@@ -1,12 +1,21 @@
 import { Bell, FileSpreadsheet, PlusCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import StatusCard from '../components/StatusCard';
 import SectionHeader from '../components/SectionHeader';
 import ActionButton from '../components/ActionButton';
 import { useAppData } from '../context/AppDataContext';
+import { formatCurrencyEGP } from '../utils/formatters';
 
 export default function Dashboard() {
-  const { netIncome, totalIncome, totalExpenses, payingStudents, reminders } = useAppData();
+  const navigate = useNavigate();
+  const { netIncome, totalIncome, totalExpenses, payingStudents, settings } = useAppData();
+
+  const reminderBefore = settings?.reminder_days_before ?? 0;
+  const reminderAfter = settings?.reminder_days_after ?? 0;
+  const reminderLabel = `قبل ${reminderBefore} يوم${reminderBefore !== 1 ? 'اً' : ''} وبعد ${reminderAfter} يوم${
+    reminderAfter !== 1 ? 'اً' : ''
+  }`;
 
   return (
     <div className="space-y-10">
@@ -15,8 +24,10 @@ export default function Dashboard() {
         subtitle="نظرة شاملة على الأداء المالي للمعلم"
         actions={
           <>
-            <ActionButton icon={PlusCircle}>إضافة دفعة جديدة</ActionButton>
-            <ActionButton variant="outline" icon={FileSpreadsheet}>
+            <ActionButton icon={PlusCircle} onClick={() => navigate('/payments')}>
+              إضافة دفعة جديدة
+            </ActionButton>
+            <ActionButton variant="outline" icon={FileSpreadsheet} onClick={() => navigate('/payments')}>
               عرض كشف الحساب
             </ActionButton>
           </>
@@ -24,17 +35,17 @@ export default function Dashboard() {
       />
 
       <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="صافي الدخل" value={`${netIncome.toLocaleString()} ر.س`} />
-        <StatCard title="إجمالي الدخل" value={`${totalIncome.toLocaleString()} ر.س`} accent="green-700" />
-        <StatCard title="إجمالي المصروفات" value={`${totalExpenses.toLocaleString()} ر.س`} accent="red-400" />
+        <StatCard title="صافي الدخل" value={formatCurrencyEGP(netIncome)} />
+        <StatCard title="إجمالي الدخل" value={formatCurrencyEGP(totalIncome)} accent="green-700" />
+        <StatCard title="إجمالي المصروفات" value={formatCurrencyEGP(totalExpenses)} accent="red-400" />
         <StatCard title="عدد الطلاب الدافعين" value={payingStudents} accent="brand-light" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <StatusCard
           title="تذكيرات الدفع"
-          value={`قبل ${reminders} أيام`}
-          description="سيتم إرسال إشعارات تلقائية للطلاب المتأخرين عبر Supabase Functions."
+          value={reminderLabel}
+          description="اضبط مستويات التذكير العامة أو الخاصة بالمجموعات والطلاب."
           variant="warning"
         />
         <div className="grid gap-4 sm:grid-cols-2">
@@ -61,7 +72,7 @@ export default function Dashboard() {
               فعّل رسائل SMS التلقائية لطلابك لتحسين الالتزام.
             </p>
           </div>
-          <ActionButton variant="subtle" icon={Bell}>
+          <ActionButton variant="subtle" icon={Bell} onClick={() => navigate('/settings/reminders')}>
             إدارة التذكيرات
           </ActionButton>
         </div>

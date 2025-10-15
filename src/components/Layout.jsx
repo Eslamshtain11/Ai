@@ -1,16 +1,17 @@
 import {
   BarChart3,
+  BellRing,
   CreditCard,
-  KeySquare,
   LayoutDashboard,
   Layers,
   LogOut,
+  Menu,
   Search,
+  UserPlus2,
   Wallet
 } from 'lucide-react';
-import { Menu } from 'lucide-react';
 import { useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAppData } from '../context/AppDataContext';
 import { Toaster } from 'react-hot-toast';
@@ -21,11 +22,12 @@ const navItems = [
   { to: '/expenses', label: 'المصروفات', icon: Wallet },
   { to: '/analytics', label: 'الإحصاءات', icon: BarChart3 },
   { to: '/students', label: 'بحث الطالب', icon: Search },
+  { to: '/students/register', label: 'تسجيل الطلاب', icon: UserPlus2 },
   { to: '/groups', label: 'إدارة المجموعات', icon: Layers },
-  { to: '/guest-codes', label: 'أكواد الضيوف', icon: KeySquare }
+  { to: '/settings/reminders', label: 'إعدادات التذكير', icon: BellRing }
 ];
 
-export default function Layout({ children }) {
+export default function Layout() {
   const { session, signOut } = useAppData();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -43,9 +45,7 @@ export default function Layout({ children }) {
             <div className="space-y-8 px-6">
               <Link to="/dashboard" className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm uppercase tracking-widest text-brand-secondary">
-                    المحاسب الشخصي
-                  </p>
+                  <p className="text-sm uppercase tracking-widest text-brand-secondary">المحاسب الشخصي</p>
                   <h1 className="text-3xl font-black text-brand-gold">لوحة التحكم</h1>
                 </div>
               </Link>
@@ -60,7 +60,7 @@ export default function Layout({ children }) {
                         clsx(
                           'flex items-center justify-between rounded-xl px-4 py-3 text-lg transition-all duration-200',
                           isActive
-                            ? 'bg-brand-gold text-brand-blue'
+                            ? 'bg-brand-gold text-brand-blue shadow-lg'
                             : 'text-brand-secondary hover:bg-brand-blue/30 hover:text-brand-light'
                         )
                       }
@@ -100,7 +100,9 @@ export default function Layout({ children }) {
             <Menu className="h-5 w-5" />
             <span>القائمة</span>
           </button>
-          <div className="space-y-8">{children}</div>
+          <div className="space-y-8">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

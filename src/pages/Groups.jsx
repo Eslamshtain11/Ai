@@ -9,9 +9,9 @@ export default function Groups() {
   const { groups, addGroup, deleteGroup } = useAppData();
   const [groupName, setGroupName] = useState('');
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    addGroup(groupName);
+    await addGroup(groupName);
     setGroupName('');
   };
 

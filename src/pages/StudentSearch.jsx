@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
 import SectionHeader from '../components/SectionHeader';
 import DataTable from '../components/DataTable';
 import { useAppData } from '../context/AppDataContext';
+import { formatCurrencyEGP } from '../utils/formatters';
 
 export default function StudentSearch() {
   const { students, payments, groups } = useAppData();
@@ -15,23 +17,32 @@ export default function StudentSearch() {
 
   const tableColumns = [
     { header: 'المجموعة', accessor: 'group' },
-    { header: 'المبلغ', accessor: 'amount' },
-    { header: 'التاريخ', accessor: 'date' }
+    {
+      header: 'المبلغ',
+      accessor: 'amount',
+      cell: (row) => formatCurrencyEGP(row.amount)
+    },
+    {
+      header: 'التاريخ',
+      accessor: 'date',
+      cell: (row) => (row.date ? format(parseISO(row.date), 'dd/MM/yyyy') : '-')
+    }
   ];
 
   const buildRows = (studentId) =>
     payments
-      .filter((payment) => payment.studentId === studentId)
+      .filter((payment) => payment.student_id === studentId)
       .map((payment) => ({
         id: payment.id,
-        group: groups.find((group) => group.id === students.find((s) => s.id === studentId)?.groupId)?.name,
+        group:
+          groups.find((group) => group.id === students.find((s) => s.id === studentId)?.group_id)?.name ?? 'غير محدد',
         amount: payment.amount,
         date: payment.date
       }));
 
   const totalForStudent = (studentId) =>
     payments
-      .filter((payment) => payment.studentId === studentId)
+      .filter((payment) => payment.student_id === studentId)
       .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
   return (
@@ -65,11 +76,11 @@ export default function StudentSearch() {
                 <div>
                   <h3 className="text-2xl font-bold text-brand-light">{student.name}</h3>
                   <p className="text-brand-secondary">
-                    المجموعة: {groups.find((group) => group.id === student.groupId)?.name || 'غير محدد'}
+                    المجموعة: {groups.find((group) => group.id === student.group_id)?.name || 'غير محدد'}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-brand-gold/40 bg-brand-blue/40 px-6 py-3 text-brand-gold">
-                  إجمالي المدفوعات: {totalForStudent(student.id).toLocaleString()} ر.س
+                  إجمالي المدفوعات: {formatCurrencyEGP(totalForStudent(student.id))}
                 </div>
               </div>
 
@@ -82,7 +93,7 @@ export default function StudentSearch() {
                       الإجمالي
                     </td>
                     <td className="px-6 py-4 text-brand-gold">
-                      {totalForStudent(student.id).toLocaleString()} ر.س
+                      {formatCurrencyEGP(totalForStudent(student.id))}
                     </td>
                   </tr>
                 }
