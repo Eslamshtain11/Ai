@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-brand-blue text-brand-light font-cairo; 
+}
+
+::selection {
+  background: rgba(212, 175, 55, 0.3);
+}
+
+a {
+  @apply text-brand-gold transition-colors duration-200;
+}
+
+a:hover {
+  @apply text-brand-light;
+}
+
+input,
+select,
+textarea {
+  @apply bg-brand-blue border border-brand-secondary/40 text-brand-light placeholder:text-brand-secondary focus:border-brand-gold focus:ring-brand-gold;
+}
+
+button {
+  @apply font-bold;
+}
