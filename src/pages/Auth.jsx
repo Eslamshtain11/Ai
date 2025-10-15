@@ -3,7 +3,9 @@ import { LogIn, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ActionButton from '../components/ActionButton';
 import FormField from '../components/FormField';
+import toast from 'react-hot-toast';
 import { useAppData } from '../context/AppDataContext';
+import { supabase } from '../services/supabaseClient';
 import { isValidEgyptPhone } from '../utils/validation';
 
 const tabs = [
@@ -19,11 +21,74 @@ const initialForm = {
 
 export default function Auth() {
   const navigate = useNavigate();
-  const { signIn, signUp, session } = useAppData();
+  const { session } = useAppData();
   const [activeTab, setActiveTab] = useState('login');
   const [form, setForm] = useState(initialForm);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+
+  const phoneToEmail = (phone) => `${phone}@app.local`.toLowerCase();
+
+  const mapAuthError = (error) => {
+    if (!error) {
+      return 'حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.';
+    }
+    const message = error.message ?? '';
+    const code = error.code ?? '';
+    if (code === 'user_already_exists' || message.includes('already registered') || message.includes('duplicate key value')) {
+      return 'رقم الجوال مسجل مسبقًا، يرجى تسجيل الدخول.';
+    }
+    if (code === 'invalid_credentials' || message.includes('Invalid login credentials')) {
+      return 'بيانات الدخول غير صحيحة. تأكد من رقم الجوال وكلمة المرور.';
+    }
+    if (message.includes('permission denied')) {
+      return 'ليست لديك صلاحية للوصول في الوقت الحالي. حاول مرة أخرى لاحقًا.';
+    }
+    return 'حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.';
+  };
+
+  const doSignUp = async (name, phone, password) => {
+    const email = phoneToEmail(phone);
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name, phone }
+      }
+    });
+    if (error) {
+      throw error;
+    }
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      throw sessionError;
+    }
+    const currentSession = sessionData?.session;
+    if (currentSession?.user) {
+      const { error: rpcError } = await supabase.rpc('ensure_user_row', {
+        p_name: name,
+        p_phone: phone
+      });
+      if (rpcError) {
+        throw rpcError;
+      }
+    }
+    return true;
+  };
+
+  const doSignIn = async (phone, password) => {
+    const email = phoneToEmail(phone);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      throw error;
+    }
+    await supabase
+      .rpc('ensure_user_row', { p_name: null, p_phone: phone })
+      .catch((rpcError) => {
+        console.warn('تعذر تحديث بيانات المستخدم بعد تسجيل الدخول:', rpcError);
+      });
+    return true;
+  };
 
   useEffect(() => {
     if (session?.user) {
@@ -57,13 +122,25 @@ export default function Auth() {
       return;
     }
 
+    if (!supabase) {
+      toast.error('التهيئة غير مكتملة، يرجى إعداد مفاتيح Supabase أولًا.');
+      setSubmitting(false);
+      return;
+    }
+
     setErrors({});
     try {
       if (activeTab === 'login') {
-        await signIn({ phone: form.phone, password: form.password });
+        await doSignIn(form.phone, form.password);
+        toast.success('تم تسجيل الدخول بنجاح');
       } else {
-        await signUp({ name: form.name, phone: form.phone, password: form.password });
+        await doSignUp(form.name.trim(), form.phone, form.password);
+        toast.success('تم إنشاء الحساب بنجاح');
       }
+      navigate('/dashboard', { replace: true });
+    } catch (error) {
+      console.error('خطأ أثناء معالجة المصادقة:', error);
+      toast.error(mapAuthError(error));
     } finally {
       setSubmitting(false);
     }
