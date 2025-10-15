@@ -84,7 +84,7 @@ export default function Dashboard() {
             >
               <p className="text-brand-gold">مرحلة {stage}</p>
               <p className="mt-3 leading-relaxed">
-                رسالة مخصصة للطلاب {'{'}{stage === 1 ? 'قبل الاستحقاق' : stage === 2 ? 'في يوم الاستحقاق' : 'بعد الاستحقاق'}{'}'}
+                رسالة مخصصة للطلاب {stage === 1 ? 'قبل الاستحقاق' : stage === 2 ? 'في يوم الاستحقاق' : 'بعد الاستحقاق'}
               </p>
             </div>
           ))}

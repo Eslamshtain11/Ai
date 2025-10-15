@@ -46,7 +46,7 @@ export default function StudentsRegister() {
 
   const recentStudents = useMemo(() => {
     const filtered = students.filter((student) => {
-      const matchesName = student.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesName = (student.name ?? '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesGroup = groupFilter ? student.group_id === groupFilter : true;
       return matchesName && matchesGroup;
     });
