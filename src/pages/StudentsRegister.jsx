@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CheckCircle2, Plus, Search, XCircle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import toast from 'react-hot-toast';
 import SectionHeader from '../components/SectionHeader';
 import ActionButton from '../components/ActionButton';
 import FormField from '../components/FormField';
@@ -8,6 +9,7 @@ import DataTable from '../components/DataTable';
 import SmartDatePicker from '../components/SmartDatePicker';
 import { useAppData } from '../context/AppDataContext';
 import { formatCurrencyEGP } from '../utils/formatters';
+import { isPositiveAmount, isValidEgyptPhone } from '../utils/validation';
 
 const initialForm = {
   name: '',
@@ -24,10 +26,37 @@ export default function StudentsRegister() {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [groupFilter, setGroupFilter] = useState('');
+  const [errors, setErrors] = useState({});
+
+  const validateForm = () => {
+    const nextErrors = {};
+    if (!form.name.trim()) {
+      nextErrors.name = 'اسم الطالب مطلوب.';
+    }
+    if (form.phone && !isValidEgyptPhone(form.phone)) {
+      nextErrors.phone = 'رقم الجوال غير صحيح.';
+    }
+    if (!form.group_id) {
+      nextErrors.group_id = 'اختر مجموعة للطالب.';
+    }
+    if (!form.join_date) {
+      nextErrors.join_date = 'حدد تاريخ الانضمام.';
+    }
+    if (form.monthly_fee !== '' && !isPositiveAmount(form.monthly_fee)) {
+      nextErrors.monthly_fee = 'الرسوم يجب أن تكون رقمًا موجبًا أو صفرًا.';
+    }
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      toast.error('يرجى تصحيح الحقول المطلوبة قبل الحفظ.');
+      return false;
+    }
+    return true;
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!form.name || !form.group_id || !form.join_date) return;
+    if (!validateForm()) return;
     setSaving(true);
     try {
       await addStudent({
@@ -39,6 +68,7 @@ export default function StudentsRegister() {
         note: form.note
       });
       setForm(initialForm);
+      setErrors({});
     } finally {
       setSaving(false);
     }
@@ -85,29 +115,48 @@ export default function StudentsRegister() {
       <div className="rounded-3xl border border-brand-secondary/20 bg-brand-navy/60 p-8 shadow-soft">
         <form className="space-y-6" onSubmit={handleSubmit}>
           <div className="grid gap-5 md:grid-cols-2">
-            <FormField label="اسم الطالب">
+            <FormField label="اسم الطالب" error={errors.name}>
               <input
                 type="text"
                 value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, name: event.target.value }));
+                  if (errors.name) {
+                    setErrors((prev) => ({ ...prev, name: undefined }));
+                  }
+                }}
                 className="rounded-xl px-4 py-3"
                 placeholder="اكتب اسم الطالب"
                 required
               />
             </FormField>
-            <FormField label="رقم ولي الأمر/الطالب (اختياري)">
+            <FormField label="رقم ولي الأمر/الطالب (اختياري)" error={errors.phone}>
               <input
                 type="tel"
                 value={form.phone}
-                onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
+                onChange={(event) => {
+                  const value = event.target.value.replace(/[^0-9]/g, '');
+                  setForm((prev) => ({ ...prev, phone: value }));
+                  if (errors.phone) {
+                    setErrors((prev) => ({ ...prev, phone: undefined }));
+                  }
+                }}
                 className="rounded-xl px-4 py-3"
                 placeholder="010XXXXXXXX"
+                inputMode="numeric"
+                dir="ltr"
+                maxLength={11}
               />
             </FormField>
-            <FormField label="المجموعة">
+            <FormField label="المجموعة" error={errors.group_id}>
               <select
                 value={form.group_id}
-                onChange={(event) => setForm((prev) => ({ ...prev, group_id: event.target.value }))}
+                onChange={(event) => {
+                  setForm((prev) => ({ ...prev, group_id: event.target.value }));
+                  if (errors.group_id) {
+                    setErrors((prev) => ({ ...prev, group_id: undefined }));
+                  }
+                }}
                 className="rounded-xl px-4 py-3"
                 required
               >
@@ -119,22 +168,35 @@ export default function StudentsRegister() {
                 ))}
               </select>
             </FormField>
-            <FormField label="تاريخ الانضمام">
+            <FormField label="تاريخ الانضمام" error={errors.join_date}>
               <SmartDatePicker
                 selected={form.join_date ? parseISO(form.join_date) : null}
                 onChange={(value) =>
                   setForm((prev) => ({ ...prev, join_date: value ? format(value, 'yyyy-MM-dd') : '' }))
                 }
                 placeholderText="اختر تاريخ الانضمام"
+                onCalendarClose={() => {
+                  if (errors.join_date && form.join_date) {
+                    setErrors((prev) => ({ ...prev, join_date: undefined }));
+                  }
+                }}
               />
             </FormField>
-            <FormField label="الرسوم الشهرية (ج.م)">
+            <FormField label="الرسوم الشهرية (ج.م)" error={errors.monthly_fee}>
               <input
                 type="number"
                 value={form.monthly_fee}
-                onChange={(event) => setForm((prev) => ({ ...prev, monthly_fee: event.target.value }))}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setForm((prev) => ({ ...prev, monthly_fee: value }));
+                  if (errors.monthly_fee) {
+                    setErrors((prev) => ({ ...prev, monthly_fee: undefined }));
+                  }
+                }}
                 className="rounded-xl px-4 py-3"
                 placeholder="مثال: 400"
+                min={0}
+                step={1}
               />
             </FormField>
             <FormField label="ملاحظات إضافية">
@@ -153,7 +215,10 @@ export default function StudentsRegister() {
               type="button"
               variant="subtle"
               icon={XCircle}
-              onClick={() => setForm(initialForm)}
+              onClick={() => {
+                setForm(initialForm);
+                setErrors({});
+              }}
             >
               إلغاء
             </ActionButton>

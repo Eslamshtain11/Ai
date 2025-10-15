@@ -3,51 +3,70 @@ import { demoPayments } from './demoData';
 const generateLocalId = () => `local-payment-${Math.random().toString(36).slice(2, 11)}`;
 const table = 'payments';
 
-export const listPayments = async (client) => {
-  if (client) {
-    const { data, error } = await client.from(table).select('*').order('date', { ascending: false });
-    if (!error && Array.isArray(data)) {
-      return data;
-    }
-    console.error('تعذر تحميل الدفعات من Supabase:', error);
+export const listPayments = async (client, userId) => {
+  if (!client || !userId) {
+    return demoPayments;
   }
-  return demoPayments;
+  const { data, error } = await client
+    .from(table)
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: false });
+  if (error) {
+    throw new Error(error.message ?? 'تعذر تحميل الدفعات');
+  }
+  return data ?? [];
 };
 
 export const createPayment = async (client, payload) => {
   const record = {
     id: generateLocalId(),
     ...payload,
+    user_id: payload.user_id ?? 'demo-user',
     created_at: new Date().toISOString()
   };
 
-  if (client) {
-    const { data, error } = await client.from(table).insert(payload).select().single();
-    if (!error && data) {
-      return data;
-    }
-    console.error('تعذر إنشاء الدفعة في Supabase:', error);
+  if (!client) {
+    return record;
   }
 
-  return record;
-};
-
-export const updatePayment = async (client, id, payload) => {
-  if (client) {
-    const { data, error } = await client.from(table).update(payload).eq('id', id).select().single();
-    if (!error && data) {
-      return data;
-    }
-    console.error('تعذر تحديث الدفعة في Supabase:', error);
+  if (!payload.user_id) {
+    throw new Error('معرّف المستخدم مطلوب لحفظ الدفعة.');
   }
-  return { id, ...payload };
+
+  const { data, error } = await client.from(table).insert(payload).select().single();
+  if (error || !data) {
+    throw new Error(error?.message ?? 'تعذر إنشاء الدفعة');
+  }
+  return data;
 };
 
-export const deletePayment = async (client, id) => {
-  if (client) {
-    const { error } = await client.from(table).delete().eq('id', id);
-    if (!error) return true;
-    console.error('تعذر حذف الدفعة من Supabase:', error);
+export const updatePayment = async (client, id, payload, userId) => {
+  if (!client) {
+    return { id, ...payload };
+  }
+  const query = client.from(table).update(payload).eq('id', id);
+  if (userId) {
+    query.eq('user_id', userId);
+  }
+  const { data, error } = await query.select().single();
+  if (error || !data) {
+    throw new Error(error?.message ?? 'تعذر تحديث الدفعة');
+  }
+  return data;
+};
+
+export const deletePayment = async (client, id, userId) => {
+  if (!client) {
+    return true;
+  }
+  const query = client.from(table).delete().eq('id', id);
+  if (userId) {
+    query.eq('user_id', userId);
+  }
+  const { error } = await query;
+  if (error) {
+    throw new Error(error.message ?? 'تعذر حذف الدفعة');
   }
   return true;
 };

@@ -9,87 +9,88 @@ const groupSettingsTable = 'group_settings';
 const studentSettingsTable = 'student_settings';
 
 export const fetchSettings = async (client, userId) => {
-  if (client && userId) {
-    const { data, error } = await client
-      .from(settingsTable)
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (!error && data) {
-      return data;
-    }
-    if (error) {
-      console.error('تعذر تحميل إعدادات المستخدم من Supabase:', error);
-    }
+  if (!client || !userId) {
+    return { user_id: userId ?? 'demo-user', ...demoSettings };
   }
-  return { user_id: userId ?? 'demo-user', ...demoSettings };
+  const { data, error } = await client
+    .from(settingsTable)
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message ?? 'تعذر تحميل إعدادات المستخدم');
+  }
+  if (data) {
+    return data;
+  }
+  return { user_id: userId, ...demoSettings };
 };
 
 export const saveSettings = async (client, payload) => {
-  if (client && payload?.user_id) {
-    const { data, error } = await client
-      .from(settingsTable)
-      .upsert({ ...payload, updated_at: new Date().toISOString() })
-      .select()
-      .maybeSingle();
-    if (!error && data) {
-      return data;
-    }
-    console.error('تعذر حفظ إعدادات المستخدم في Supabase:', error);
+  if (!client || !payload?.user_id) {
+    return payload;
   }
-  return payload;
+  const { data, error } = await client
+    .from(settingsTable)
+    .upsert({ ...payload, updated_at: new Date().toISOString() })
+    .select()
+    .maybeSingle();
+  if (error || !data) {
+    throw new Error(error?.message ?? 'تعذر حفظ إعدادات المستخدم');
+  }
+  return data;
 };
 
-export const fetchGroupOverrides = async (client) => {
-  if (client) {
-    const { data, error } = await client.from(groupSettingsTable).select('*');
-    if (!error && Array.isArray(data)) {
-      return data;
-    }
-    console.error('تعذر تحميل إعدادات المجموعات من Supabase:', error);
+export const fetchGroupOverrides = async (client, userId) => {
+  if (!client || !userId) {
+    return demoGroupSettings;
   }
-  return demoGroupSettings;
+  const { data, error } = await client.from(groupSettingsTable).select('*').eq('user_id', userId);
+  if (error) {
+    throw new Error(error.message ?? 'تعذر تحميل إعدادات المجموعات');
+  }
+  return data ?? [];
 };
 
 export const saveGroupOverride = async (client, payload) => {
-  if (client) {
-    const { data, error } = await client
-      .from(groupSettingsTable)
-      .upsert({ ...payload, updated_at: new Date().toISOString() })
-      .select()
-      .maybeSingle();
-    if (!error && data) {
-      return data;
-    }
-    console.error('تعذر حفظ إعدادات المجموعة في Supabase:', error);
+  if (!client || !payload?.user_id) {
+    return payload;
   }
-  return payload;
+  const { data, error } = await client
+    .from(groupSettingsTable)
+    .upsert({ ...payload, updated_at: new Date().toISOString() })
+    .select()
+    .maybeSingle();
+  if (error || !data) {
+    throw new Error(error?.message ?? 'تعذر حفظ إعدادات المجموعة');
+  }
+  return data;
 };
 
-export const fetchStudentOverrides = async (client) => {
-  if (client) {
-    const { data, error } = await client.from(studentSettingsTable).select('*');
-    if (!error && Array.isArray(data)) {
-      return data;
-    }
-    console.error('تعذر تحميل إعدادات الطلاب من Supabase:', error);
+export const fetchStudentOverrides = async (client, userId) => {
+  if (!client || !userId) {
+    return demoStudentSettings;
   }
-  return demoStudentSettings;
+  const { data, error } = await client.from(studentSettingsTable).select('*').eq('user_id', userId);
+  if (error) {
+    throw new Error(error.message ?? 'تعذر تحميل إعدادات الطلاب');
+  }
+  return data ?? [];
 };
 
 export const saveStudentOverride = async (client, payload) => {
-  if (client) {
-    const { data, error } = await client
-      .from(studentSettingsTable)
-      .upsert({ ...payload, updated_at: new Date().toISOString() })
-      .select()
-      .maybeSingle();
-    if (!error && data) {
-      return data;
-    }
-    console.error('تعذر حفظ إعدادات الطالب في Supabase:', error);
+  if (!client || !payload?.user_id) {
+    return payload;
   }
-  return payload;
+  const { data, error } = await client
+    .from(studentSettingsTable)
+    .upsert({ ...payload, updated_at: new Date().toISOString() })
+    .select()
+    .maybeSingle();
+  if (error || !data) {
+    throw new Error(error?.message ?? 'تعذر حفظ إعدادات الطالب');
+  }
+  return data;
 };
 
 export const computeEffectiveReminderDays = (

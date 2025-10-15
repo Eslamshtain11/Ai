@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Calendar, FileDown, FileSpreadsheet, LineChart, PlusCircle, Search } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import toast from 'react-hot-toast';
 import SectionHeader from '../components/SectionHeader';
 import ActionButton from '../components/ActionButton';
 import DataTable from '../components/DataTable';
@@ -25,6 +26,8 @@ export default function Payments() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
   const [form, setForm] = useState(initialPayment);
+  const [formErrors, setFormErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
   const searchInputRef = useRef(null);
   const tableContainerRef = useRef(null);
 
@@ -55,13 +58,32 @@ export default function Payments() {
   );
 
   const handleExportXlsx = () => {
+    if (filteredPayments.length === 0) {
+      toast.error('لا توجد بيانات للتصدير حاليًا.');
+      return;
+    }
     const rows = mapPaymentRowsForExport(filteredPayments, studentsLookup, groupsLookup);
-    exportPaymentsXLSX(rows, monthKey);
+    try {
+      exportPaymentsXLSX(rows, monthKey);
+      toast.success('تم إنشاء ملف XLSX بنجاح');
+    } catch (error) {
+      console.error('تعذر تصدير XLSX:', error);
+      toast.error('تعذر تصدير الملف بصيغة XLSX.');
+    }
   };
 
   const handleExportPdf = async () => {
-    if (filteredPayments.length === 0) return;
-    await exportPaymentsPDF(tableContainerRef.current, monthKey);
+    if (filteredPayments.length === 0) {
+      toast.error('لا توجد بيانات للتصدير حاليًا.');
+      return;
+    }
+    try {
+      await exportPaymentsPDF(tableContainerRef.current, monthKey);
+      toast.success('تم إنشاء ملف PDF بنجاح');
+    } catch (error) {
+      console.error('تعذر تصدير PDF:', error);
+      toast.error('تعذر تصدير الملف بصيغة PDF.');
+    }
   };
 
   const openModal = (payment) => {
@@ -77,18 +99,49 @@ export default function Payments() {
       setEditingPayment(null);
       setForm(initialPayment);
     }
+    setFormErrors({});
     setModalOpen(true);
+  };
+
+  const validateForm = () => {
+    const nextErrors = {};
+    if (!form.student_id) {
+      nextErrors.student_id = 'اختر الطالب أولًا.';
+    }
+    if (!form.amount || Number(form.amount) <= 0) {
+      nextErrors.amount = 'أدخل مبلغًا صحيحًا أكبر من صفر.';
+    }
+    if (!form.date) {
+      nextErrors.date = 'حدد تاريخ الدفعة.';
+    }
+    setFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      toast.error('يرجى تصحيح الحقول المطلوبة قبل الحفظ.');
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!form.student_id || !form.amount || !form.date) return;
-    if (editingPayment) {
-      await updatePayment(editingPayment.id, form);
-    } else {
-      await addPayment(form);
+    if (!validateForm()) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        ...form,
+        amount: Number(form.amount ?? 0)
+      };
+      if (editingPayment) {
+        await updatePayment(editingPayment.id, payload);
+      } else {
+        await addPayment(payload);
+      }
+      setModalOpen(false);
+      setForm(initialPayment);
+      setFormErrors({});
+    } finally {
+      setSubmitting(false);
     }
-    setModalOpen(false);
   };
 
   const tableColumns = [
@@ -179,7 +232,11 @@ export default function Payments() {
           <ActionButton variant="danger" icon={FileDown} onClick={handleExportPdf}>
             تصدير PDF
           </ActionButton>
-          <ActionButton variant="subtle" icon={LineChart}>
+          <ActionButton
+            variant="subtle"
+            icon={LineChart}
+            onClick={() => toast('ميزة التحليل الذكي ستتصل بـ Gemini قريبًا.')}
+          >
             تحليل ذكي
           </ActionButton>
         </div>
@@ -202,10 +259,15 @@ export default function Payments() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="دفعة الطالب">
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <FormField label="الطالب">
+          <FormField label="الطالب" error={formErrors.student_id}>
             <select
               value={form.student_id}
-              onChange={(event) => setForm((prev) => ({ ...prev, student_id: event.target.value }))}
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, student_id: event.target.value }));
+                if (formErrors.student_id) {
+                  setFormErrors((prev) => ({ ...prev, student_id: undefined }));
+                }
+              }}
               className="rounded-xl px-4 py-3"
               required
             >
@@ -217,22 +279,36 @@ export default function Payments() {
               ))}
             </select>
           </FormField>
-          <FormField label="المبلغ (ج.م)">
+          <FormField label="المبلغ (ج.م)" error={formErrors.amount}>
             <input
               type="number"
               value={form.amount}
-              onChange={(event) => setForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, amount: event.target.value }));
+                if (formErrors.amount) {
+                  setFormErrors((prev) => ({ ...prev, amount: undefined }));
+                }
+              }}
               className="rounded-xl px-4 py-3"
               required
+              min={0}
+              step={1}
+              inputMode="decimal"
+              dir="ltr"
             />
           </FormField>
-          <FormField label="التاريخ">
+          <FormField label="التاريخ" error={formErrors.date}>
             <SmartDatePicker
               selected={form.date ? parseISO(form.date) : null}
               onChange={(value) =>
                 setForm((prev) => ({ ...prev, date: value ? format(value, 'yyyy-MM-dd') : '' }))
               }
               placeholderText="اختر التاريخ"
+              onCalendarClose={() => {
+                if (formErrors.date && form.date) {
+                  setFormErrors((prev) => ({ ...prev, date: undefined }));
+                }
+              }}
             />
           </FormField>
           <FormField label="ملاحظات">
@@ -245,11 +321,18 @@ export default function Payments() {
             />
           </FormField>
           <div className="flex justify-end gap-3 pt-4">
-            <ActionButton variant="subtle" onClick={() => setModalOpen(false)}>
+            <ActionButton
+              variant="subtle"
+              onClick={() => {
+                setModalOpen(false);
+                setFormErrors({});
+              }}
+              disabled={submitting}
+            >
               إلغاء
             </ActionButton>
-            <ActionButton type="submit" variant="primary">
-              {editingPayment ? 'تحديث' : 'حفظ'}
+            <ActionButton type="submit" variant="primary" disabled={submitting}>
+              {submitting ? 'جارٍ الحفظ...' : editingPayment ? 'تحديث الدفعة' : 'حفظ الدفعة'}
             </ActionButton>
           </div>
         </form>

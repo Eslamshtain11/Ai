@@ -32,9 +32,20 @@ import {
   computeEffectiveReminderDays
 } from '../services/settings';
 import { createUser, findUserByPhone } from '../services/users';
-import { demoUser } from '../services/demoData';
+import {
+  demoUser,
+  demoGroups,
+  demoStudents,
+  demoPayments,
+  demoExpenses,
+  demoSettings,
+  demoGroupSettings,
+  demoStudentSettings
+} from '../services/demoData';
 
 const AppDataContext = createContext();
+
+const SESSION_STORAGE_KEY = 'personal-accountant-session';
 
 const hashPassword = async (value) => {
   if (!value) return '';
@@ -67,29 +78,96 @@ export function AppDataProvider({ children }) {
   const [groupOverrides, setGroupOverrides] = useState([]);
   const [studentOverrides, setStudentOverrides] = useState([]);
 
+  const userId = session?.user?.id;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.user) {
+          setSession(parsed);
+        }
+      }
+    } catch (error) {
+      console.warn('تعذر قراءة الجلسة المخزنة:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (session?.user) {
+        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      } else {
+        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.warn('تعذر تحديث الجلسة في التخزين المحلي:', error);
+    }
+  }, [session]);
+
   const loadAllData = useCallback(
     async (userId) => {
       if (!userId) return;
       setLoading(true);
       try {
-        const [groupsData, studentsData, paymentsData, expensesData, settingsData, groupSettings, studentSettings] =
-          await Promise.all([
-            listGroups(supabase),
-            listStudents(supabase),
-            listPayments(supabase),
-            listExpenses(supabase),
-            fetchSettings(supabase, userId),
-            fetchGroupOverrides(supabase),
-            fetchStudentOverrides(supabase)
-          ]);
+        const tasks = [
+          {
+            loader: () => listGroups(supabase, userId),
+            setter: setGroups,
+            fallback: demoGroups
+          },
+          {
+            loader: () => listStudents(supabase, userId),
+            setter: setStudents,
+            fallback: demoStudents
+          },
+          {
+            loader: () => listPayments(supabase, userId),
+            setter: setPayments,
+            fallback: demoPayments
+          },
+          {
+            loader: () => listExpenses(supabase, userId),
+            setter: setExpenses,
+            fallback: demoExpenses
+          },
+          {
+            loader: () => fetchSettings(supabase, userId),
+            setter: setSettings,
+            fallback: { user_id: userId ?? 'demo-user', ...demoSettings }
+          },
+          {
+            loader: () => fetchGroupOverrides(supabase, userId),
+            setter: setGroupOverrides,
+            fallback: demoGroupSettings
+          },
+          {
+            loader: () => fetchStudentOverrides(supabase, userId),
+            setter: setStudentOverrides,
+            fallback: demoStudentSettings
+          }
+        ];
 
-        setGroups(groupsData);
-        setStudents(studentsData);
-        setPayments(paymentsData);
-        setExpenses(expensesData);
-        setSettings(settingsData);
-        setGroupOverrides(groupSettings);
-        setStudentOverrides(studentSettings);
+        const results = await Promise.allSettled(tasks.map((task) => task.loader()));
+        let hadError = false;
+
+        results.forEach((result, index) => {
+          const { setter, fallback } = tasks[index];
+          if (result.status === 'fulfilled') {
+            setter(result.value ?? fallback);
+          } else {
+            hadError = true;
+            console.error('تعذر تحميل بيانات التطبيق:', result.reason);
+            setter(fallback);
+          }
+        });
+
+        if (hadError) {
+          toast.error('تعذر تحميل بعض البيانات من Supabase، تم استخدام بيانات محلية مؤقتًا.');
+        }
       } catch (error) {
         console.error('حدث خطأ أثناء تحميل البيانات:', error);
         toast.error('تعذر تحميل البيانات، سيتم استخدام بيانات تجريبية.');
@@ -101,9 +179,9 @@ export function AppDataProvider({ children }) {
   );
 
   useEffect(() => {
-    if (!session?.user?.id) return;
-    loadAllData(session.user.id);
-  }, [loadAllData, session?.user?.id, supabaseReady]);
+    if (!userId) return;
+    loadAllData(userId);
+  }, [loadAllData, userId, supabaseReady]);
 
   const signIn = useCallback(
     async ({ phone, password }) => {
@@ -113,8 +191,12 @@ export function AppDataProvider({ children }) {
       }
       try {
         const hashed = await hashPassword(password);
-        const userRecord = await findUserByPhone(supabase, phone);
-        if (supabase && (!userRecord || userRecord.password_hash !== hashed)) {
+        const userRecord = await findUserByPhone(supabase, phone, { fallbackToDemo: !supabase });
+        if (!userRecord) {
+          toast.error('رقم الجوال غير مسجل');
+          return;
+        }
+        if (supabase && userRecord.password_hash !== hashed) {
           toast.error('بيانات الدخول غير صحيحة');
           return;
         }
@@ -137,6 +219,13 @@ export function AppDataProvider({ children }) {
         return;
       }
       try {
+        if (supabase) {
+          const existing = await findUserByPhone(supabase, phone, { fallbackToDemo: false });
+          if (existing) {
+            toast.error('رقم الجوال مسجل مسبقًا، حاول تسجيل الدخول.');
+            return;
+          }
+        }
         const hashed = await hashPassword(password);
         const payload = {
           name,
@@ -157,6 +246,13 @@ export function AppDataProvider({ children }) {
 
   const signOut = useCallback(() => {
     setSession(null);
+    setGroups(demoGroups);
+    setStudents(demoStudents);
+    setPayments(demoPayments);
+    setExpenses(demoExpenses);
+    setSettings(null);
+    setGroupOverrides([]);
+    setStudentOverrides([]);
     toast.success('تم تسجيل الخروج');
   }, []);
 
@@ -167,11 +263,20 @@ export function AppDataProvider({ children }) {
         toast.error('اسم المجموعة مطلوب');
         return;
       }
-      const newGroup = await createGroup(supabase, { name: trimmed });
-      setGroups((prev) => [...prev, newGroup]);
-      toast.success('تمت إضافة المجموعة');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة المجموعات.');
+        return;
+      }
+      try {
+        const newGroup = await createGroup(supabase, { name: trimmed, user_id: userId });
+        setGroups((prev) => [...prev, newGroup]);
+        toast.success('تمت إضافة المجموعة');
+      } catch (error) {
+        console.error('تعذر إضافة المجموعة:', error);
+        toast.error('تعذر إضافة المجموعة الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const deleteGroup = useCallback(
@@ -180,135 +285,263 @@ export function AppDataProvider({ children }) {
         toast.error('لا يمكن حذف آخر مجموعة');
         return;
       }
-      await removeGroup(supabase, groupId);
-      setGroups((prev) => prev.filter((group) => group.id !== groupId));
-      toast.success('تم حذف المجموعة');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة المجموعات.');
+        return;
+      }
+      try {
+        await removeGroup(supabase, groupId, userId);
+        setGroups((prev) => prev.filter((group) => group.id !== groupId));
+        toast.success('تم حذف المجموعة');
+      } catch (error) {
+        console.error('تعذر حذف المجموعة:', error);
+        toast.error('تعذر حذف المجموعة الآن');
+      }
     },
-    [groups.length, supabase]
+    [groups.length, supabase, userId]
   );
 
   const addStudent = useCallback(
     async (payload) => {
-      const newStudent = await persistStudent(supabase, payload);
-      setStudents((prev) => [newStudent, ...prev]);
-      toast.success('تم تسجيل الطالب بنجاح');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الطلاب.');
+        return;
+      }
+      try {
+        const newStudent = await persistStudent(supabase, { ...payload, user_id: userId });
+        setStudents((prev) => [newStudent, ...prev]);
+        toast.success('تم تسجيل الطالب بنجاح');
+      } catch (error) {
+        console.error('تعذر تسجيل الطالب:', error);
+        toast.error('تعذر تسجيل الطالب حاليًا');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const updateStudent = useCallback(
     async (id, payload) => {
-      const updatedStudent = await persistStudentUpdate(supabase, id, payload);
-      setStudents((prev) => prev.map((student) => (student.id === id ? { ...student, ...updatedStudent } : student)));
-      toast.success('تم تحديث بيانات الطالب');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الطلاب.');
+        return;
+      }
+      try {
+        const updatedStudent = await persistStudentUpdate(supabase, id, payload, userId);
+        setStudents((prev) => prev.map((student) => (student.id === id ? { ...student, ...updatedStudent } : student)));
+        toast.success('تم تحديث بيانات الطالب');
+      } catch (error) {
+        console.error('تعذر تحديث بيانات الطالب:', error);
+        toast.error('تعذر تحديث بيانات الطالب حاليًا');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const deleteStudent = useCallback(
     async (id) => {
-      await removeStudent(supabase, id);
-      setStudents((prev) => prev.filter((student) => student.id !== id));
-      toast.success('تم حذف الطالب');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الطلاب.');
+        return;
+      }
+      try {
+        await removeStudent(supabase, id, userId);
+        setStudents((prev) => prev.filter((student) => student.id !== id));
+        toast.success('تم حذف الطالب');
+      } catch (error) {
+        console.error('تعذر حذف الطالب:', error);
+        toast.error('تعذر حذف الطالب الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const addPayment = useCallback(
     async (payload) => {
-      const newPayment = await persistPayment(supabase, payload);
-      setPayments((prev) => [newPayment, ...prev]);
-      toast.success('تمت إضافة الدفعة');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الدفعات.');
+        return;
+      }
+      try {
+        const normalizedPayload = {
+          ...payload,
+          amount: Number(payload.amount ?? 0),
+          user_id: userId
+        };
+        const newPayment = await persistPayment(supabase, normalizedPayload);
+        setPayments((prev) => [newPayment, ...prev]);
+        toast.success('تمت إضافة الدفعة');
+      } catch (error) {
+        console.error('تعذر إضافة الدفعة:', error);
+        toast.error('تعذر إضافة الدفعة حاليًا');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const updatePayment = useCallback(
     async (id, payload) => {
-      const updatedPayment = await persistPaymentUpdate(supabase, id, payload);
-      setPayments((prev) => prev.map((payment) => (payment.id === id ? { ...payment, ...updatedPayment } : payment)));
-      toast.success('تم تحديث الدفعة');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الدفعات.');
+        return;
+      }
+      try {
+        const normalizedPayload = { ...payload, amount: Number(payload.amount ?? 0) };
+        const updatedPayment = await persistPaymentUpdate(supabase, id, normalizedPayload, userId);
+        setPayments((prev) => prev.map((payment) => (payment.id === id ? { ...payment, ...updatedPayment } : payment)));
+        toast.success('تم تحديث الدفعة');
+      } catch (error) {
+        console.error('تعذر تحديث الدفعة:', error);
+        toast.error('تعذر تحديث الدفعة الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const deletePayment = useCallback(
     async (id) => {
-      await removePayment(supabase, id);
-      setPayments((prev) => prev.filter((payment) => payment.id !== id));
-      toast.success('تم حذف الدفعة');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الدفعات.');
+        return;
+      }
+      try {
+        await removePayment(supabase, id, userId);
+        setPayments((prev) => prev.filter((payment) => payment.id !== id));
+        toast.success('تم حذف الدفعة');
+      } catch (error) {
+        console.error('تعذر حذف الدفعة:', error);
+        toast.error('تعذر حذف الدفعة الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const addExpense = useCallback(
     async (payload) => {
-      const newExpense = await persistExpense(supabase, payload);
-      setExpenses((prev) => [newExpense, ...prev]);
-      toast.success('تمت إضافة المصروف');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة المصروفات.');
+        return;
+      }
+      try {
+        const normalizedPayload = {
+          ...payload,
+          amount: Number(payload.amount ?? 0),
+          user_id: userId
+        };
+        const newExpense = await persistExpense(supabase, normalizedPayload);
+        setExpenses((prev) => [newExpense, ...prev]);
+        toast.success('تمت إضافة المصروف');
+      } catch (error) {
+        console.error('تعذر إضافة المصروف:', error);
+        toast.error('تعذر إضافة المصروف الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const updateExpense = useCallback(
     async (id, payload) => {
-      const updatedExpense = await persistExpenseUpdate(supabase, id, payload);
-      setExpenses((prev) => prev.map((expense) => (expense.id === id ? { ...expense, ...updatedExpense } : expense)));
-      toast.success('تم تحديث المصروف');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة المصروفات.');
+        return;
+      }
+      try {
+        const normalizedPayload = { ...payload, amount: Number(payload.amount ?? 0) };
+        const updatedExpense = await persistExpenseUpdate(supabase, id, normalizedPayload, userId);
+        setExpenses((prev) => prev.map((expense) => (expense.id === id ? { ...expense, ...updatedExpense } : expense)));
+        toast.success('تم تحديث المصروف');
+      } catch (error) {
+        console.error('تعذر تحديث المصروف:', error);
+        toast.error('تعذر تحديث المصروف الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const deleteExpense = useCallback(
     async (id) => {
-      await removeExpense(supabase, id);
-      setExpenses((prev) => prev.filter((expense) => expense.id !== id));
-      toast.success('تم حذف المصروف');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة المصروفات.');
+        return;
+      }
+      try {
+        await removeExpense(supabase, id, userId);
+        setExpenses((prev) => prev.filter((expense) => expense.id !== id));
+        toast.success('تم حذف المصروف');
+      } catch (error) {
+        console.error('تعذر حذف المصروف:', error);
+        toast.error('تعذر حذف المصروف الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const saveReminderSettings = useCallback(
     async (payload) => {
-      if (!session?.user?.id) return;
-      const updated = await saveSettings(supabase, {
-        ...payload,
-        user_id: session.user.id
-      });
-      setSettings(updated);
-      toast.success('تم حفظ إعدادات التذكير');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الإعدادات.');
+        return;
+      }
+      try {
+        const updated = await saveSettings(supabase, {
+          ...payload,
+          user_id: userId
+        });
+        setSettings(updated);
+        toast.success('تم حفظ إعدادات التذكير');
+      } catch (error) {
+        console.error('تعذر حفظ الإعدادات العامة:', error);
+        toast.error('تعذر حفظ إعدادات التذكير حاليًا');
+      }
     },
-    [session?.user?.id, supabase]
+    [supabase, userId]
   );
 
   const saveGroupReminder = useCallback(
     async (groupId, payload) => {
-      const updated = await saveGroupOverride(supabase, { group_id: groupId, ...payload });
-      setGroupOverrides((prev) => {
-        const exists = prev.find((item) => item.group_id === groupId);
-        if (exists) {
-          return prev.map((item) => (item.group_id === groupId ? updated : item));
-        }
-        return [...prev, updated];
-      });
-      toast.success('تم حفظ إعدادات المجموعة');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الإعدادات.');
+        return;
+      }
+      try {
+        const updated = await saveGroupOverride(supabase, { user_id: userId, group_id: groupId, ...payload });
+        setGroupOverrides((prev) => {
+          const exists = prev.find((item) => item.group_id === groupId);
+          if (exists) {
+            return prev.map((item) => (item.group_id === groupId ? updated : item));
+          }
+          return [...prev, updated];
+        });
+        toast.success('تم حفظ إعدادات المجموعة');
+      } catch (error) {
+        console.error('تعذر حفظ إعدادات المجموعة:', error);
+        toast.error('تعذر حفظ إعدادات المجموعة الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const saveStudentReminder = useCallback(
     async (studentId, payload) => {
-      const updated = await saveStudentOverride(supabase, { student_id: studentId, ...payload });
-      setStudentOverrides((prev) => {
-        const exists = prev.find((item) => item.student_id === studentId);
-        if (exists) {
-          return prev.map((item) => (item.student_id === studentId ? updated : item));
-        }
-        return [...prev, updated];
-      });
-      toast.success('تم حفظ إعدادات الطالب');
+      if (!userId) {
+        toast.error('يرجى تسجيل الدخول لإدارة الإعدادات.');
+        return;
+      }
+      try {
+        const updated = await saveStudentOverride(supabase, { user_id: userId, student_id: studentId, ...payload });
+        setStudentOverrides((prev) => {
+          const exists = prev.find((item) => item.student_id === studentId);
+          if (exists) {
+            return prev.map((item) => (item.student_id === studentId ? updated : item));
+          }
+          return [...prev, updated];
+        });
+        toast.success('تم حفظ إعدادات الطالب');
+      } catch (error) {
+        console.error('تعذر حفظ إعدادات الطالب:', error);
+        toast.error('تعذر حفظ إعدادات الطالب الآن');
+      }
     },
-    [supabase]
+    [supabase, userId]
   );
 
   const getEffectiveReminderDays = useCallback(

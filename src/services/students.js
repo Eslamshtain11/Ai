@@ -4,54 +4,70 @@ const generateLocalId = () => `local-student-${Math.random().toString(36).slice(
 
 const table = 'students';
 
-export const listStudents = async (client) => {
-  if (client) {
-    const { data, error } = await client
-      .from(table)
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error && Array.isArray(data)) {
-      return data;
-    }
-    console.error('فشل تحميل الطلاب من Supabase:', error);
+export const listStudents = async (client, userId) => {
+  if (!client || !userId) {
+    return demoStudents;
   }
-  return demoStudents;
+  const { data, error } = await client
+    .from(table)
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) {
+    throw new Error(error.message ?? 'تعذر تحميل الطلاب');
+  }
+  return data ?? [];
 };
 
 export const createStudent = async (client, payload) => {
   const record = {
     id: generateLocalId(),
     ...payload,
+    user_id: payload.user_id ?? 'demo-user',
     created_at: new Date().toISOString()
   };
 
-  if (client) {
-    const { data, error } = await client.from(table).insert(payload).select().single();
-    if (!error && data) {
-      return data;
-    }
-    console.error('تعذر حفظ الطالب في Supabase:', error);
+  if (!client) {
+    return record;
   }
 
-  return record;
+  if (!payload.user_id) {
+    throw new Error('معرّف المستخدم مطلوب لتسجيل الطالب.');
+  }
+
+  const { data, error } = await client.from(table).insert(payload).select().single();
+  if (error || !data) {
+    throw new Error(error?.message ?? 'تعذر حفظ الطالب');
+  }
+  return data;
 };
 
-export const deleteStudent = async (client, id) => {
-  if (client) {
-    const { error } = await client.from(table).delete().eq('id', id);
-    if (!error) return true;
-    console.error('تعذر حذف الطالب من Supabase:', error);
+export const deleteStudent = async (client, id, userId) => {
+  if (!client) {
+    return true;
+  }
+  const query = client.from(table).delete().eq('id', id);
+  if (userId) {
+    query.eq('user_id', userId);
+  }
+  const { error } = await query;
+  if (error) {
+    throw new Error(error.message ?? 'تعذر حذف الطالب');
   }
   return true;
 };
 
-export const updateStudent = async (client, id, payload) => {
-  if (client) {
-    const { data, error } = await client.from(table).update(payload).eq('id', id).select().single();
-    if (!error && data) {
-      return data;
-    }
-    console.error('تعذر تحديث الطالب في Supabase:', error);
+export const updateStudent = async (client, id, payload, userId) => {
+  if (!client) {
+    return { id, ...payload };
   }
-  return { id, ...payload };
+  const query = client.from(table).update(payload).eq('id', id);
+  if (userId) {
+    query.eq('user_id', userId);
+  }
+  const { data, error } = await query.select().single();
+  if (error || !data) {
+    throw new Error(error?.message ?? 'تعذر تحديث الطالب');
+  }
+  return data;
 };

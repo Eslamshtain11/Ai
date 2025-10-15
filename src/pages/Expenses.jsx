@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Calendar, FileDown, FileSpreadsheet, PlusCircle, Search } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import toast from 'react-hot-toast';
 import SectionHeader from '../components/SectionHeader';
 import ActionButton from '../components/ActionButton';
 import DataTable from '../components/DataTable';
@@ -24,6 +25,8 @@ export default function Expenses() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [form, setForm] = useState(initialExpense);
+  const [formErrors, setFormErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
 
   const monthKey = selectedMonth ? format(selectedMonth, 'yyyy-MM') : '';
 
@@ -53,18 +56,49 @@ export default function Expenses() {
       setEditingExpense(null);
       setForm(initialExpense);
     }
+    setFormErrors({});
     setModalOpen(true);
+  };
+
+  const validateForm = () => {
+    const nextErrors = {};
+    if (!form.description.trim()) {
+      nextErrors.description = 'أدخل وصفًا للمصروف.';
+    }
+    if (form.amount === '' || Number(form.amount) < 0) {
+      nextErrors.amount = 'أدخل مبلغًا صحيحًا.';
+    }
+    if (!form.date) {
+      nextErrors.date = 'حدد تاريخ المصروف.';
+    }
+    setFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      toast.error('يرجى تصحيح الحقول المطلوبة قبل الحفظ.');
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!form.description || !form.amount || !form.date) return;
-    if (editingExpense) {
-      await updateExpense(editingExpense.id, form);
-    } else {
-      await addExpense(form);
+    if (!validateForm()) return;
+    setSubmitting(true);
+    try {
+      const payload = {
+        ...form,
+        amount: Number(form.amount ?? 0)
+      };
+      if (editingExpense) {
+        await updateExpense(editingExpense.id, payload);
+      } else {
+        await addExpense(payload);
+      }
+      setModalOpen(false);
+      setForm(initialExpense);
+      setFormErrors({});
+    } finally {
+      setSubmitting(false);
     }
-    setModalOpen(false);
   };
 
   const columns = [
@@ -136,10 +170,18 @@ export default function Expenses() {
           />
         </label>
         <div className="flex flex-wrap justify-end gap-3">
-          <ActionButton variant="success" icon={FileSpreadsheet} onClick={() => console.info('XLSX export placeholder')}>
+          <ActionButton
+            variant="success"
+            icon={FileSpreadsheet}
+            onClick={() => toast('ميزة التصدير للمصروفات ستتم إضافتها قريبًا.')}
+          >
             تصدير XLSX
           </ActionButton>
-          <ActionButton variant="danger" icon={FileDown} onClick={() => console.info('PDF export placeholder')}>
+          <ActionButton
+            variant="danger"
+            icon={FileDown}
+            onClick={() => toast('ميزة التصدير للمصروفات ستتم إضافتها قريبًا.')}
+          >
             تصدير PDF
           </ActionButton>
         </div>
@@ -161,31 +203,50 @@ export default function Expenses() {
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="مصروف جديد">
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <FormField label="الوصف">
+          <FormField label="الوصف" error={formErrors.description}>
             <input
               type="text"
               value={form.description}
-              onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, description: event.target.value }));
+                if (formErrors.description) {
+                  setFormErrors((prev) => ({ ...prev, description: undefined }));
+                }
+              }}
               className="rounded-xl px-4 py-3"
               required
             />
           </FormField>
-          <FormField label="المبلغ (ج.م)">
+          <FormField label="المبلغ (ج.م)" error={formErrors.amount}>
             <input
               type="number"
               value={form.amount}
-              onChange={(event) => setForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, amount: event.target.value }));
+                if (formErrors.amount) {
+                  setFormErrors((prev) => ({ ...prev, amount: undefined }));
+                }
+              }}
               className="rounded-xl px-4 py-3"
               required
+              min={0}
+              step={1}
+              inputMode="decimal"
+              dir="ltr"
             />
           </FormField>
-          <FormField label="التاريخ">
+          <FormField label="التاريخ" error={formErrors.date}>
             <SmartDatePicker
               selected={form.date ? parseISO(form.date) : null}
               onChange={(value) =>
                 setForm((prev) => ({ ...prev, date: value ? format(value, 'yyyy-MM-dd') : '' }))
               }
               placeholderText="اختر التاريخ"
+              onCalendarClose={() => {
+                if (formErrors.date && form.date) {
+                  setFormErrors((prev) => ({ ...prev, date: undefined }));
+                }
+              }}
             />
           </FormField>
           <FormField label="ملاحظات">
@@ -198,11 +259,18 @@ export default function Expenses() {
             />
           </FormField>
           <div className="flex justify-end gap-3 pt-4">
-            <ActionButton variant="subtle" onClick={() => setModalOpen(false)}>
+            <ActionButton
+              variant="subtle"
+              onClick={() => {
+                setModalOpen(false);
+                setFormErrors({});
+              }}
+              disabled={submitting}
+            >
               إلغاء
             </ActionButton>
-            <ActionButton type="submit" variant="primary">
-              {editingExpense ? 'تحديث' : 'حفظ'}
+            <ActionButton type="submit" variant="primary" disabled={submitting}>
+              {submitting ? 'جارٍ الحفظ...' : editingExpense ? 'تحديث المصروف' : 'حفظ المصروف'}
             </ActionButton>
           </div>
         </form>
