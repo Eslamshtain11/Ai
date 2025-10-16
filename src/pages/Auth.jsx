@@ -1,247 +1,167 @@
-import { useEffect, useMemo, useState } from 'react';
-import { LogIn, UserPlus } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ActionButton from '../components/ActionButton';
-import FormField from '../components/FormField';
+import { supabase } from '../services/supabaseClient.js';
 import toast from 'react-hot-toast';
-import { useAppData } from '../context/AppDataContext';
-import { supabase } from '../services/supabaseClient';
-import { isValidEgyptPhone } from '../utils/validation';
-
-const tabs = [
-  { key: 'login', label: 'تسجيل الدخول', icon: LogIn },
-  { key: 'signup', label: 'إنشاء حساب', icon: UserPlus }
-];
 
 const initialForm = {
-  name: '',
-  phone: '',
-  password: ''
+  email: '',
+  password: '',
+  fullName: '',
+  phone: ''
 };
 
 export default function Auth() {
-  const navigate = useNavigate();
-  const { session } = useAppData();
-  const [activeTab, setActiveTab] = useState('login');
+  const [mode, setMode] = useState('signin');
   const [form, setForm] = useState(initialForm);
-  const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  const phoneToEmail = (phone) => `${phone}@app.local`.toLowerCase();
-
-  const mapAuthError = (error) => {
-    if (!error) {
-      return 'حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.';
-    }
-    const message = error.message ?? '';
-    const code = error.code ?? '';
-    if (code === 'user_already_exists' || message.includes('already registered') || message.includes('duplicate key value')) {
-      return 'رقم الجوال مسجل مسبقًا، يرجى تسجيل الدخول.';
-    }
-    if (code === 'invalid_credentials' || message.includes('Invalid login credentials')) {
-      return 'بيانات الدخول غير صحيحة. تأكد من رقم الجوال وكلمة المرور.';
-    }
-    if (message.includes('permission denied')) {
-      return 'ليست لديك صلاحية للوصول في الوقت الحالي. حاول مرة أخرى لاحقًا.';
-    }
-    return 'حدث خطأ غير متوقع، يرجى المحاولة مرة أخرى.';
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const doSignUp = async (name, phone, password) => {
-    const email = phoneToEmail(phone);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name, phone }
-      }
-    });
-    if (error) {
-      throw error;
-    }
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) {
-      throw sessionError;
-    }
-    const currentSession = sessionData?.session;
-    if (currentSession?.user) {
-      const { error: rpcError } = await supabase.rpc('ensure_user_row', {
-        p_name: name,
-        p_phone: phone
+  const ensureProfile = async (fullName, phone) => {
+    try {
+      await supabase.rpc('ensure_profile', {
+        p_name: fullName || null,
+        p_phone: phone || null
       });
-      if (rpcError) {
-        throw rpcError;
-      }
+    } catch (error) {
+      console.error('تعذر تحديث الملف الشخصي:', error);
     }
-    return true;
   };
-
-  const doSignIn = async (phone, password) => {
-    const email = phoneToEmail(phone);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      throw error;
-    }
-    await supabase
-      .rpc('ensure_user_row', { p_name: null, p_phone: phone })
-      .catch((rpcError) => {
-        console.warn('تعذر تحديث بيانات المستخدم بعد تسجيل الدخول:', rpcError);
-      });
-    return true;
-  };
-
-  useEffect(() => {
-    if (session?.user) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [navigate, session?.user]);
-
-  const activeIcon = useMemo(() => tabs.find((tab) => tab.key === activeTab)?.icon, [activeTab]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setSubmitting(true);
-    const nextErrors = {};
-    if (activeTab === 'signup') {
-      if (!form.name.trim()) {
-        nextErrors.name = 'الاسم مطلوب.';
-      } else if (form.name.trim().length < 3) {
-        nextErrors.name = 'الاسم يجب أن يحتوي على 3 أحرف على الأقل.';
-      }
-    }
-    if (!isValidEgyptPhone(form.phone)) {
-      nextErrors.phone = 'أدخل رقم جوال مصري صحيح مكوَّن من 11 رقمًا.';
-    }
-    if (!form.password || form.password.length < 6) {
-      nextErrors.password = 'كلمة المرور يجب ألا تقل عن 6 أحرف/أرقام.';
-    }
-
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      setSubmitting(false);
-      return;
-    }
-
     if (!supabase) {
-      toast.error('التهيئة غير مكتملة، يرجى إعداد مفاتيح Supabase أولًا.');
-      setSubmitting(false);
+      toast.error('برجاء تهيئة مفاتيح Supabase أولاً.');
       return;
     }
-
-    setErrors({});
+    setLoading(true);
     try {
-      if (activeTab === 'login') {
-        await doSignIn(form.phone, form.password);
-        toast.success('تم تسجيل الدخول بنجاح');
+      if (mode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email: form.email,
+          password: form.password,
+          options: {
+            data: {
+              full_name: form.fullName,
+              phone: form.phone
+            }
+          }
+        });
+        if (error) throw error;
+        await ensureProfile(form.fullName, form.phone);
+        if (data.user) {
+          toast.success('تم التسجيل بنجاح!');
+          navigate('/dashboard');
+        } else {
+          toast('تم إرسال رابط التفعيل إلى بريدك الإلكتروني.');
+        }
       } else {
-        await doSignUp(form.name.trim(), form.phone, form.password);
-        toast.success('تم إنشاء الحساب بنجاح');
+        const { error } = await supabase.auth.signInWithPassword({
+          email: form.email,
+          password: form.password
+        });
+        if (error) throw error;
+        await ensureProfile(form.fullName, form.phone);
+        toast.success('مرحبًا بعودتك!');
+        navigate('/dashboard');
       }
-      navigate('/dashboard', { replace: true });
     } catch (error) {
-      console.error('خطأ أثناء معالجة المصادقة:', error);
-      toast.error(mapAuthError(error));
+      console.error('فشل تسجيل الدخول/التسجيل:', error);
+      toast.error(error?.message ?? 'حدث خطأ غير متوقع');
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-brand-navy/80 px-4 py-16">
-      <div className="w-full max-w-2xl rounded-3xl border border-brand-secondary/20 bg-brand-blue/70 p-10 shadow-soft">
-        <div className="text-center">
-          <h1 className="text-4xl font-black text-brand-gold">المحاسب الشخصي</h1>
-          <p className="mt-3 text-brand-secondary">
-            سجّل دخولك لإدارة الدخل والمصروفات وكل ما يخص طلابك بسهولة
-          </p>
-        </div>
-
-        <div className="mt-10 flex justify-center gap-3">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.key);
-                  setForm(initialForm);
-                  setErrors({});
-                }}
-                className={`flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold transition-all ${
-                  isActive
-                    ? 'bg-brand-gold text-brand-blue shadow-lg'
-                    : 'bg-brand-navy/60 text-brand-secondary hover:text-brand-light'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <form onSubmit={handleSubmit} className="mt-10 space-y-6">
-          {activeTab === 'signup' ? (
-            <FormField label="الاسم الكامل" error={errors.name}>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="rounded-xl px-4 py-3 text-brand-light"
-                placeholder="أدخل اسمك الكامل"
-                required
-              />
-            </FormField>
-          ) : null}
-
-          <FormField label="رقم الجوال" error={errors.phone}>
-            <input
-              type="tel"
-              value={form.phone}
-              onChange={(event) => {
-                const value = event.target.value.replace(/[^0-9]/g, '');
-                setForm((prev) => ({ ...prev, phone: value }));
-                if (errors.phone) {
-                  setErrors((prev) => ({ ...prev, phone: undefined }));
-                }
-              }}
-              className="rounded-xl px-4 py-3 text-brand-light"
-              placeholder="010XXXXXXXX"
-              inputMode="numeric"
-              maxLength={11}
-              pattern="01[0-25][0-9]{8}"
-              dir="ltr"
-              required
-            />
-          </FormField>
-
-          <FormField label="كلمة المرور" error={errors.password}>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(event) => {
-                setForm((prev) => ({ ...prev, password: event.target.value }));
-                if (errors.password) {
-                  setErrors((prev) => ({ ...prev, password: undefined }));
-                }
-              }}
-              className="rounded-xl px-4 py-3 text-brand-light"
-              placeholder="******"
-              minLength={6}
-              required
-            />
-          </FormField>
-
-          <ActionButton
-            type="submit"
-            className="w-full justify-center"
-            icon={activeIcon}
-            disabled={submitting}
+    <div className="flex min-h-screen items-center justify-center bg-brand-blue px-4">
+      <div className="w-full max-w-lg rounded-3xl border border-brand-secondary/30 bg-brand-navy/80 p-8 shadow-soft">
+        <div className="mb-6 flex gap-3 rounded-full border border-brand-secondary/40 bg-brand-blue/60 p-1 text-sm font-bold">
+          <button
+            type="button"
+            onClick={() => setMode('signin')}
+            className={`flex-1 rounded-full px-4 py-2 transition ${
+              mode === 'signin' ? 'bg-brand-gold text-brand-blue' : 'text-brand-light'
+            }`}
           >
-            {submitting ? 'جارٍ المعالجة...' : tabs.find((tab) => tab.key === activeTab)?.label}
-          </ActionButton>
+            تسجيل الدخول
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('signup')}
+            className={`flex-1 rounded-full px-4 py-2 transition ${
+              mode === 'signup' ? 'bg-brand-gold text-brand-blue' : 'text-brand-light'
+            }`}
+          >
+            إنشاء حساب
+          </button>
+        </div>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          {mode === 'signup' && (
+            <>
+              <label className="flex flex-col gap-2 text-sm font-bold text-brand-light">
+                الاسم الكامل
+                <input
+                  name="fullName"
+                  value={form.fullName}
+                  onChange={handleChange}
+                  required
+                  placeholder="محمد أحمد"
+                  className="rounded-xl border border-brand-secondary/40 bg-brand-blue/70 px-4 py-3 text-right text-brand-light focus:border-brand-gold focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-bold text-brand-light">
+                رقم الهاتف
+                <input
+                  name="phone"
+                  value={form.phone}
+                  onChange={handleChange}
+                  placeholder="01000000000"
+                  className="rounded-xl border border-brand-secondary/40 bg-brand-blue/70 px-4 py-3 text-right text-brand-light focus:border-brand-gold focus:outline-none"
+                />
+              </label>
+            </>
+          )}
+
+          <label className="flex flex-col gap-2 text-sm font-bold text-brand-light">
+            البريد الإلكتروني
+            <input
+              name="email"
+              value={form.email}
+              onChange={handleChange}
+              type="email"
+              required
+              placeholder="teacher@example.com"
+              className="rounded-xl border border-brand-secondary/40 bg-brand-blue/70 px-4 py-3 text-right text-brand-light focus:border-brand-gold focus:outline-none"
+            />
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm font-bold text-brand-light">
+            كلمة المرور
+            <input
+              name="password"
+              value={form.password}
+              onChange={handleChange}
+              type="password"
+              required
+              minLength={6}
+              placeholder="••••••••"
+              className="rounded-xl border border-brand-secondary/40 bg-brand-blue/70 px-4 py-3 text-right text-brand-light focus:border-brand-gold focus:outline-none"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-full bg-brand-gold px-6 py-3 text-sm font-black text-brand-blue transition hover:bg-brand-gold/90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? 'لحظات...' : mode === 'signup' ? 'تسجيل حساب جديد' : 'تسجيل الدخول'}
+          </button>
         </form>
       </div>
     </div>

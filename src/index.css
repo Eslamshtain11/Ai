@@ -7,7 +7,7 @@
 }
 
 body {
-  @apply bg-brand-blue text-brand-light font-cairo; 
+  @apply min-h-screen bg-brand-blue font-cairo text-brand-light antialiased;
 }
 
 ::selection {
@@ -25,39 +25,9 @@ a:hover {
 input,
 select,
 textarea {
-  @apply bg-brand-blue border border-brand-secondary/40 text-brand-light placeholder:text-brand-secondary focus:border-brand-gold focus:ring-brand-gold;
+  @apply rounded-xl border border-brand-secondary/40 bg-brand-blue/70 text-brand-light placeholder:text-brand-secondary focus:border-brand-gold focus:outline-none;
 }
 
 button {
   @apply font-bold;
-}
-
-.react-datepicker {
-  direction: rtl;
-  @apply border-0 bg-brand-navy text-brand-light;
-}
-
-.react-datepicker__header {
-  @apply bg-brand-blue text-brand-light border-0 rounded-t-xl;
-}
-
-.react-datepicker__current-month,
-.react-datepicker-time__header,
-.react-datepicker-year-header {
-  @apply text-brand-gold font-bold;
-}
-
-.react-datepicker__day-name,
-.react-datepicker__day,
-.react-datepicker__time-name {
-  @apply text-sm text-brand-light;
-}
-
-.react-datepicker__day--selected,
-.react-datepicker__day--keyboard-selected {
-  @apply bg-brand-gold text-brand-blue;
-}
-
-.react-datepicker__navigation-icon::before {
-  border-color: #d4af37;
 }

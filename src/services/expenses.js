@@ -1,72 +1,51 @@
-import { demoExpenses } from './demoData';
+import { supabase } from './supabaseClient.js';
 
-const generateLocalId = () => `local-expense-${Math.random().toString(36).slice(2, 11)}`;
-const table = 'expenses';
-
-export const listExpenses = async (client, userId) => {
-  if (!client || !userId) {
-    return demoExpenses;
-  }
-  const { data, error } = await client
-    .from(table)
-    .select('*')
+export async function fetchExpenses(userId) {
+  if (!supabase || !userId) return [];
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('id, user_id, description, amount, date, note, created_at')
     .eq('user_id', userId)
     .order('date', { ascending: false });
   if (error) {
-    throw new Error(error.message ?? 'تعذر تحميل المصروفات');
+    console.error('تعذر تحميل المصروفات:', error);
+    return [];
   }
   return data ?? [];
-};
+}
 
-export const createExpense = async (client, payload) => {
-  const record = {
-    id: generateLocalId(),
-    ...payload,
-    user_id: payload.user_id ?? 'demo-user',
-    created_at: new Date().toISOString()
-  };
-
-  if (!client) {
-    return record;
-  }
-
-  if (!payload.user_id) {
-    throw new Error('معرّف المستخدم مطلوب لحفظ المصروف.');
-  }
-
-  const { data, error } = await client.from(table).insert(payload).select().single();
-  if (error || !data) {
-    throw new Error(error?.message ?? 'تعذر إنشاء المصروف');
-  }
-  return data;
-};
-
-export const updateExpense = async (client, id, payload, userId) => {
-  if (!client) {
-    return { id, ...payload };
-  }
-  const query = client.from(table).update(payload).eq('id', id);
-  if (userId) {
-    query.eq('user_id', userId);
-  }
-  const { data, error } = await query.select().single();
-  if (error || !data) {
-    throw new Error(error?.message ?? 'تعذر تحديث المصروف');
-  }
-  return data;
-};
-
-export const deleteExpense = async (client, id, userId) => {
-  if (!client) {
-    return true;
-  }
-  const query = client.from(table).delete().eq('id', id);
-  if (userId) {
-    query.eq('user_id', userId);
-  }
-  const { error } = await query;
+export async function createExpense(userId, payload) {
+  if (!supabase || !userId) return null;
+  const { data, error } = await supabase
+    .from('expenses')
+    .insert({ ...payload, user_id: userId })
+    .select('*')
+    .single();
   if (error) {
-    throw new Error(error.message ?? 'تعذر حذف المصروف');
+    console.error('تعذر إضافة المصروف:', error);
+    throw error;
   }
-  return true;
-};
+  return data;
+}
+
+export async function updateExpense(expenseId, payload) {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update(payload)
+    .eq('id', expenseId)
+    .select('*')
+    .single();
+  if (error) {
+    console.error('تعذر تحديث المصروف:', error);
+    throw error;
+  }
+  return data;
+}
+
+export async function deleteExpense(expenseId) {
+  const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
+  if (error) {
+    console.error('تعذر حذف المصروف:', error);
+    throw error;
+  }
+}
