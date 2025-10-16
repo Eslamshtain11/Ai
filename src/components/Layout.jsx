@@ -1,110 +1,82 @@
-import {
-  BarChart3,
-  BellRing,
-  CreditCard,
-  LayoutDashboard,
-  Layers,
-  LogOut,
-  Menu,
-  Search,
-  UserPlus2,
-  Wallet
-} from 'lucide-react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { LogOut, Menu, BarChart3, Users, CreditCard, Wallet, Settings2, LayoutDashboard } from 'lucide-react';
 import { useState } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
-import clsx from 'clsx';
-import { useAppData } from '../context/AppDataContext';
-import { Toaster } from 'react-hot-toast';
+import { supabase } from '../services/supabaseClient.js';
 
 const navItems = [
   { to: '/dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
-  { to: '/payments', label: 'كشف الحساب', icon: CreditCard },
+  { to: '/students', label: 'الطلاب', icon: Users },
+  { to: '/payments', label: 'الدفعات', icon: CreditCard },
   { to: '/expenses', label: 'المصروفات', icon: Wallet },
-  { to: '/analytics', label: 'الإحصاءات', icon: BarChart3 },
-  { to: '/students', label: 'بحث الطالب', icon: Search },
-  { to: '/students/register', label: 'تسجيل الطلاب', icon: UserPlus2 },
-  { to: '/groups', label: 'إدارة المجموعات', icon: Layers },
-  { to: '/settings/reminders', label: 'إعدادات التذكير', icon: BellRing }
+  { to: '/analytics', label: 'التحليلات', icon: BarChart3 },
+  { to: '/settings', label: 'الإعدادات', icon: Settings2 }
 ];
 
 export default function Layout() {
-  const { session, signOut } = useAppData();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    await supabase?.auth.signOut();
+    navigate('/auth');
+  };
 
   return (
     <div className="min-h-screen bg-brand-blue text-brand-light">
-      <Toaster position="top-center" toastOptions={{ duration: 2500 }} />
-      <div className="flex flex-col-reverse gap-6 lg:flex-row lg:gap-0">
-        <aside
-          className={clsx(
-            'fixed bottom-0 right-0 top-0 z-40 w-72 transform bg-brand-navy/90 backdrop-blur transition-transform duration-300 lg:static lg:translate-x-0',
-            sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
-          )}
-        >
-          <div className="flex h-full flex-col justify-between py-8">
-            <div className="space-y-8 px-6">
-              <Link to="/dashboard" className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm uppercase tracking-widest text-brand-secondary">المحاسب الشخصي</p>
-                  <h1 className="text-3xl font-black text-brand-gold">لوحة التحكم</h1>
-                </div>
-              </Link>
-              <nav className="space-y-2">
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      className={({ isActive }) =>
-                        clsx(
-                          'flex items-center justify-between rounded-xl px-4 py-3 text-lg transition-all duration-200',
-                          isActive
-                            ? 'bg-brand-gold text-brand-blue shadow-lg'
-                            : 'text-brand-secondary hover:bg-brand-blue/30 hover:text-brand-light'
-                        )
-                      }
-                      onClick={() => setSidebarOpen(false)}
-                    >
-                      <span>{item.label}</span>
-                      <Icon className="h-5 w-5" />
-                    </NavLink>
-                  );
-                })}
-              </nav>
-            </div>
-            <div className="space-y-3 px-6">
-              <div className="rounded-xl border border-brand-secondary/20 bg-brand-blue/30 p-4 text-sm">
-                <p className="text-brand-secondary">مرحبًا،</p>
-                <p className="text-lg font-semibold text-brand-light">{session?.user?.name}</p>
-                <p className="text-brand-secondary">{session?.user?.phone}</p>
-              </div>
-              <button
-                type="button"
-                onClick={signOut}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 py-3 text-red-400 transition-all hover:bg-red-500/20"
-              >
-                <span>تسجيل الخروج</span>
-                <LogOut className="h-5 w-5" />
-              </button>
+      <header className="border-b border-brand-secondary/30 bg-brand-navy/70 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-brand-secondary/30 bg-brand-blue/80 text-brand-light transition hover:border-brand-gold hover:text-brand-gold lg:hidden"
+              onClick={() => setMenuOpen((prev) => !prev)}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div>
+              <h1 className="text-xl font-black text-brand-gold">دفاتر المعلم</h1>
+              <p className="text-sm text-brand-secondary">متابعة الدخل والمصروفات بسهولة</p>
             </div>
           </div>
-        </aside>
-
-        <main className="flex-1 bg-brand-blue px-4 pb-10 pt-6 lg:px-10 lg:pb-12 lg:pt-8">
           <button
             type="button"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            className="ml-auto mb-6 flex items-center gap-2 rounded-xl border border-brand-secondary/40 bg-brand-navy px-4 py-2 text-brand-secondary transition-all hover:text-brand-light lg:hidden"
+            onClick={handleSignOut}
+            className="flex items-center gap-2 rounded-full border border-brand-secondary/30 bg-brand-blue/70 px-4 py-2 text-sm font-bold text-brand-light transition hover:border-brand-gold hover:text-brand-gold"
           >
-            <Menu className="h-5 w-5" />
-            <span>القائمة</span>
+            <LogOut className="h-4 w-4" />
+            تسجيل الخروج
           </button>
-          <div className="space-y-8">
-            <Outlet />
-          </div>
+        </div>
+      </header>
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row">
+        <nav
+          className={`flex flex-col gap-2 rounded-2xl border border-brand-secondary/20 bg-brand-navy/60 p-4 shadow-soft transition-all lg:sticky lg:top-6 lg:w-64 lg:self-start ${
+            menuOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 overflow-hidden opacity-0 lg:max-h-none lg:opacity-100'
+          }`}
+        >
+          {navItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold transition hover:bg-brand-blue/60 hover:text-brand-gold ${
+                  isActive ? 'bg-brand-blue/80 text-brand-gold' : 'text-brand-light'
+                }`
+              }
+              onClick={() => setMenuOpen(false)}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <main className="flex-1">
+          <Outlet />
         </main>
       </div>
+      <footer className="border-t border-brand-secondary/20 bg-brand-navy/60 py-4 text-center text-xs text-brand-secondary">
+        صنع بالحب لمعلمي الدروس الخصوصية © {new Date().getFullYear()}
+      </footer>
     </div>
   );
 }

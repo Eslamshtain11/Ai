@@ -1,16 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import App from './App';
+import App from './App.jsx';
 import './index.css';
-import { AppDataProvider } from './context/AppDataContext';
+import { AuthProvider } from './hooks/useAuth.js';
+import { Toaster } from 'react-hot-toast';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AppDataProvider>
+      <AuthProvider>
         <App />
-      </AppDataProvider>
+        <Toaster position="top-center" toastOptions={{ style: { direction: 'rtl' } }} />
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

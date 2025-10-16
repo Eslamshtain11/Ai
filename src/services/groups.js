@@ -1,57 +1,29 @@
-import { demoGroups } from './demoData';
+import { supabase } from './supabaseClient.js';
 
-const generateLocalId = () => `local-group-${Math.random().toString(36).slice(2, 11)}`;
-const table = 'groups';
-
-export const listGroups = async (client, userId) => {
-  if (!client || !userId) {
-    return demoGroups;
-  }
-  const { data, error } = await client
-    .from(table)
-    .select('*')
+export async function fetchGroups(userId) {
+  if (!supabase || !userId) return [];
+  const { data, error } = await supabase
+    .from('groups')
+    .select('id, name, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
   if (error) {
-    throw new Error(error.message ?? 'تعذر تحميل المجموعات');
+    console.error('تعذر تحميل المجموعات:', error);
+    return [];
   }
   return data ?? [];
-};
+}
 
-export const createGroup = async (client, payload) => {
-  const record = {
-    id: generateLocalId(),
-    name: payload.name,
-    user_id: payload.user_id ?? 'demo-user',
-    created_at: new Date().toISOString()
-  };
-
-  if (!client) {
-    return record;
-  }
-
-  if (!payload.user_id) {
-    throw new Error('معرّف المستخدم مطلوب لحفظ المجموعة.');
-  }
-
-  const { data, error } = await client.from(table).insert(payload).select().single();
-  if (error || !data) {
-    throw new Error(error?.message ?? 'تعذر إنشاء المجموعة في Supabase');
+export async function createGroup(userId, name) {
+  if (!supabase || !userId || !name) return null;
+  const { data, error } = await supabase
+    .from('groups')
+    .insert({ user_id: userId, name })
+    .select('id, name')
+    .single();
+  if (error) {
+    console.error('تعذر إنشاء المجموعة:', error);
+    throw error;
   }
   return data;
-};
-
-export const deleteGroup = async (client, id, userId) => {
-  if (!client) {
-    return true;
-  }
-  const query = client.from(table).delete().eq('id', id);
-  if (userId) {
-    query.eq('user_id', userId);
-  }
-  const { error } = await query;
-  if (error) {
-    throw new Error(error.message ?? 'تعذر حذف المجموعة');
-  }
-  return true;
-};
+}
